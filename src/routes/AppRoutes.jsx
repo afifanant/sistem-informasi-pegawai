@@ -1,42 +1,29 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 
-// LOGIN
+// 1. IMPORT KOMPONEN (Pastikan path dan nama file sesuai dengan struktur folder lu)
 import Login from "../pages/auth/Login";
-
-// ADMIN
 import DashboardAdmin from "../pages/admin/DashboardAdmin";
-
-// PEGAWAI
-import PegawaiDashboard from "../pages/pegawai/PegawaiDashboard";
-
-// PIMPINAN
-import PimpinanDashboard from "../pages/pimpinan/DashboardPimpinan";
+import DashboardPegawai from "../pages/pegawai/DashboardPegawai"; // FIX: Disamakan dengan log git commit lu sebelumnya
+import DashboardPimpinan from "../pages/pimpinan/DashboardPimpinan";
 
 export default function AppRoutes() {
   return (
     <BrowserRouter>
       <Routes>
-
-        {/* LOGIN */}
+        
+        {/* HALAMAN UTAMA / LOGIN */}
         <Route path="/" element={<Login />} />
 
-        {/* ADMIN */}
-        <Route
-          path="/admin"
-          element={<DashboardAdmin />}
-        />
+        {/* DASHBOARD ADMIN */}
+        <Route path="/admin" element={<DashboardAdmin />} />
 
-        {/* PEGAWAI */}
-        <Route
-          path="/pegawai"
-          element={<DashboardPegawai />}
-        />
+        {/* DASHBOARD PEGAWAI */}
+        {/* FIX: Path diubah ke "/dashboard-pegawai" agar sinkron dengan fungsi navigate() di Login.jsx */}
+        {/* FIX: Element disesuaikan dengan nama komponen yang di-import di atas */}
+        <Route path="/dashboard-pegawai" element={<DashboardPegawai />} />
 
-        {/* PIMPINAN */}
-        <Route
-          path="/pimpinan"
-          element={<DashboardPimpinan />}
-        />
+        {/* DASHBOARD PIMPINAN */}
+        <Route path="/pimpinan" element={<DashboardPimpinan />} />
 
       </Routes>
     </BrowserRouter>
