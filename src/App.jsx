@@ -46,7 +46,7 @@ export default function App() {
         {/* FIX 2: ProtectedRoute dicopot sementara agar tidak bentrok dengan sesi Supabase */}
         <Route path="/pegawai" element={<DashboardPegawai />} />
         <Route path="/pegawai/absensi" element={<AbsensiPegawai />} />
-        <Route path="/pegawai/tugas" element={<TugasSaya />} />
+        {/* <Route path="/pegawai/tugas" element={<TugasSaya />} /> */}
         <Route path="/pegawai/profile" element={<ProfilePegawai />} />
 
         {/* PIMPINAN */}

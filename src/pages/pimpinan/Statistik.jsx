@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
-import DashboardLayout from "../../layouts/PimpinanLayout"; // Pastikan ini benar
+import DashboardLayout from "../../layouts/PimpinanLayout";
 import {
   BarChart3,
   TrendingUp,
   Users,
   Briefcase,
   Loader2,
+  UserCircle
 } from "lucide-react";
 import { supabase } from "../../supabaseClient";
 
@@ -16,19 +17,23 @@ export default function Statistik() {
     divisi: 0,
     absensi: 0,
   });
+  
+  // STATE BARU: Untuk menyimpan daftar data pegawai
+  const [pegawaiList, setPegawaiList] = useState([]);
 
   useEffect(() => {
     async function fetchData() {
       try {
         setLoading(true);
 
-        // Fetch data secara paralel untuk kecepatan
+        // Fetch data secara paralel
+        // PERHATIKAN: head: true dihapus dari profiles agar datanya ikut terambil
         const [
-          { count: countPegawai },
+          { data: dataPegawai, count: countPegawai },
           { count: countDivisi },
           { count: countAbsensi }
         ] = await Promise.all([
-          supabase.from("profiles").select("*", { count: "exact", head: true }),
+          supabase.from("profiles").select("*", { count: "exact" }), 
           supabase.from("divisi").select("*", { count: "exact", head: true }),
           supabase.from("absensi").select("*", { count: "exact", head: true })
         ]);
@@ -38,6 +43,10 @@ export default function Statistik() {
           divisi: countDivisi || 0,
           absensi: countAbsensi || 0,
         });
+
+        // Simpan data array pegawai ke state
+        setPegawaiList(dataPegawai || []);
+
       } catch (error) {
         console.error("Error fetching stats:", error.message);
       } finally {
@@ -56,7 +65,6 @@ export default function Statistik() {
   ];
 
   return (
-    // MEMBUNGKUS KONTEN DENGAN LAYOUT
     <DashboardLayout>
       <div className="p-6 space-y-8 bg-[#f4f7fb] w-full">
         
@@ -99,33 +107,80 @@ export default function Statistik() {
           )}
         </div>
 
-        {/* CHART */}
-        <div className="bg-white rounded-[35px] p-8 shadow-sm border border-slate-100">
-          <div className="flex items-center gap-4 mb-10">
-            <div className="bg-blue-600 text-white p-4 rounded-2xl">
-              <BarChart3 />
+        {/* BAGIAN BAWAH: GRID 2 KOLOM (KIRI CHART, KANAN DAFTAR PEGAWAI) */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+          
+          {/* CHART */}
+          <div className="xl:col-span-2 bg-white rounded-[35px] p-8 shadow-sm border border-slate-100">
+            <div className="flex items-center gap-4 mb-10">
+              <div className="bg-blue-600 text-white p-4 rounded-2xl">
+                <BarChart3 />
+              </div>
+              <div>
+                <p className="uppercase tracking-[4px] text-gray-400 text-sm">
+                  Analytics
+                </p>
+                <h2 className="text-4xl font-black text-slate-800">
+                  Grafik Produktivitas
+                </h2>
+              </div>
             </div>
-            <div>
-              <p className="uppercase tracking-[4px] text-gray-400 text-sm">
-                Analytics
-              </p>
-              <h2 className="text-4xl font-black text-slate-800">
-                Grafik Produktivitas
-              </h2>
+
+            <div className="flex items-end gap-6 h-[350px]">
+              {["Jan", "Feb", "Mar", "Apr", "Mei", "Jun"].map((bulan, index) => (
+                <div key={index} className="flex-1 flex flex-col items-center">
+                  <div
+                    className="w-full rounded-t-3xl bg-gradient-to-t from-blue-700 to-cyan-400"
+                    style={{ height: `${60 + index * 5}%` }}
+                  ></div>
+                  <p className="mt-4 font-bold text-slate-700">{bulan}</p>
+                </div>
+              ))}
             </div>
           </div>
 
-          <div className="flex items-end gap-6 h-[350px]">
-            {["Jan", "Feb", "Mar", "Apr", "Mei", "Jun"].map((bulan, index) => (
-              <div key={index} className="flex-1 flex flex-col items-center">
-                <div
-                  className="w-full rounded-t-3xl bg-gradient-to-t from-blue-700 to-cyan-400"
-                  style={{ height: `${60 + index * 5}%` }}
-                ></div>
-                <p className="mt-4 font-bold text-slate-700">{bulan}</p>
+          {/* DAFTAR PEGAWAI DARI SUPABASE */}
+          <div className="bg-white rounded-[35px] p-8 shadow-sm border border-slate-100 overflow-hidden flex flex-col">
+            <div className="flex items-center gap-4 mb-8">
+              <div className="bg-green-500 text-white p-4 rounded-2xl">
+                <Users />
               </div>
-            ))}
+              <div>
+                <p className="uppercase tracking-[4px] text-gray-400 text-sm">
+                  Directory
+                </p>
+                <h2 className="text-3xl font-black text-slate-800">
+                  Tim Aktif
+                </h2>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto pr-2 space-y-4 max-h-[350px] custom-scrollbar">
+              {loading ? (
+                <div className="flex justify-center py-10">
+                  <Loader2 className="animate-spin text-green-500" size={30} />
+                </div>
+              ) : pegawaiList.length === 0 ? (
+                <p className="text-gray-500 text-center py-5">Belum ada data pegawai.</p>
+              ) : (
+                pegawaiList.map((pegawai) => (
+                  <div key={pegawai.id} className="flex items-center gap-4 p-4 rounded-2xl border border-slate-100 hover:bg-slate-50 transition-colors">
+                    <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold text-lg">
+                      {pegawai.email ? pegawai.email.charAt(0).toUpperCase() : <UserCircle />}
+                    </div>
+                    <div>
+                      {/* Kalau kolom nama belum ada di DB lu, ini akan fallback pakai bagian depan email */}
+                      <h3 className="font-bold text-slate-800 text-lg">
+                        {pegawai.nama || pegawai.email.split('@')[0]}
+                      </h3>
+                      <p className="text-sm text-gray-500 capitalize">{pegawai.role || "Pegawai"}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
+
         </div>
       </div>
     </DashboardLayout>

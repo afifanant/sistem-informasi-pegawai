@@ -23,11 +23,7 @@ export default function SidebarPegawai() {
       path: "/pegawai/absensi",
       icon: <ClipboardCheck size={22} />,
     },
-    {
-      title: "Tugas Saya",
-      path: "/pegawai/tugas",
-      icon: <Briefcase size={22} />,
-    },
+  
     {
       title: "Profile Saya",
       path: "/pegawai/profile",
