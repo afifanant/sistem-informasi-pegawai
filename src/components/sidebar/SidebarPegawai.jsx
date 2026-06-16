@@ -4,7 +4,6 @@ import {
   Briefcase,
   User,
   LogOut,
-  ListTodo, // <-- Import ikon baru untuk Tugas Saya
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../../supabaseClient"; 
@@ -29,13 +28,6 @@ export default function SidebarPegawai() {
       path: "/pegawai/projek", 
       icon: <Briefcase size={22} />,
     },
-    // --- MENU BARU: TUGAS SAYA ---
-    {
-      title: "Tugas Saya",
-      path: "/pegawai/tugas", // Path mengarah ke halaman tugas
-      icon: <ListTodo size={22} />,
-    },
-    // -----------------------------
     {
       title: "Profile Saya",
       path: "/pegawai/profile",
@@ -101,22 +93,16 @@ export default function SidebarPegawai() {
 
       {/* PROFILE & LOGOUT */}
       <div className="bg-white/10 rounded-[30px] p-5">
-        <div className="flex items-center gap-4">
-          <img
-            src="https://i.pravatar.cc/100?img=12"
-            alt="Profile"
-            className="w-14 h-14 rounded-full object-cover"
-          />
-          <div>
-            <h3 className="font-bold text-lg">Pegawai</h3>
-            <p className="text-green-200 text-sm">Staff Perusahaan</p>
-          </div>
+        {/* Layout disesuaikan agar rapi tanpa foto profil */}
+        <div className="text-center mb-2">
+          <h3 className="font-bold text-lg">Pegawai</h3>
+          <p className="text-green-200 text-sm">Staff Perusahaan</p>
         </div>
 
         {/* TOMBOL LOGOUT TERHUBUNG */}
         <button 
           onClick={handleLogout}
-          className="mt-6 w-full bg-red-500 hover:bg-red-600 active:scale-[0.98] transition-all py-3 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-red-500/20"
+          className="mt-4 w-full bg-red-500 hover:bg-red-600 active:scale-[0.98] transition-all py-3 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-red-500/20"
         >
           <LogOut size={20} />
           Logout

@@ -16,6 +16,8 @@ import DashboardPegawai from "./pages/pegawai/DashboardPegawai";
 import AbsensiPegawai from "./pages/pegawai/AbsensiPegawai";
 import TugasSaya from "./pages/pegawai/TugasSaya";
 import ProfilePegawai from "./pages/pegawai/ProfilePegawai";
+// Tambahan import ProjekPegawai
+import ProjekPegawai from "./pages/pegawai/ProjekPegawai"; 
 
 import DashboardPimpinan from "./pages/pimpinan/DashboardPimpinan";
 import Monitoring from "./pages/pimpinan/Monitoring";
@@ -47,6 +49,10 @@ export default function App() {
         <Route path="/pegawai" element={<DashboardPegawai />} />
         <Route path="/pegawai/absensi" element={<AbsensiPegawai />} />
         {/* <Route path="/pegawai/tugas" element={<TugasSaya />} /> */}
+        
+        {/* Tambahan Route untuk ProjekPegawai */}
+        <Route path="/pegawai/projek" element={<ProjekPegawai />} />
+        
         <Route path="/pegawai/profile" element={<ProfilePegawai />} />
 
         {/* PIMPINAN */}

@@ -44,18 +44,26 @@ export default function Divisi() {
     fetchDivisiData(); 
   }, []);
 
-  // FUNGSI MANAJEMEN PENUGASAN (EDIT & HAPUS)
+  // FUNGSI MANAJEMEN PENUGASAN (EDIT & HAPUS) DENGAN VALIDASI KETAT
   const handleSimpanPenugasan = async () => {
     setActionLoading(true);
     try {
-      const { error } = await supabase.from('profiles').update({
+      // WAJIB pakai .select() agar Supabase mengembalikan data yang berhasil diubah
+      const { data, error } = await supabase.from('profiles').update({
         nama_proyek: editPenugasan.nama_proyek,
         proyek_lokasi: editPenugasan.proyek_lokasi,
         tanggal_mulai: editPenugasan.tanggal_mulai || null,
         tanggal_selesai: editPenugasan.tanggal_selesai || null
-      }).eq('id', editPenugasan.id);
+      }).eq('id', editPenugasan.id).select();
+
       if (error) throw error;
-      alert("Penugasan diperbarui!");
+      
+      // Jika data kosong, berarti update gagal karena RLS Supabase
+      if (!data || data.length === 0) {
+        throw new Error("⛔ Update diblokir Supabase! Lu belum jalanin script SQL buat buka RLS profiles.");
+      }
+
+      alert("Penugasan berhasil diperbarui di database!");
       setShowEditPenugasanModal(false);
       fetchDivisiData();
     } catch (err) { 
@@ -68,7 +76,20 @@ export default function Divisi() {
   const handleHapusPenugasan = async (id, nama) => {
     if (!window.confirm(`Yakin ingin melepas penugasan ${nama}?`)) return;
     try {
-      await supabase.from('profiles').update({ nama_proyek: null, proyek_lokasi: null, tanggal_mulai: null, tanggal_selesai: null }).eq('id', id);
+      const { data, error } = await supabase.from('profiles').update({ 
+        nama_proyek: null, 
+        proyek_lokasi: null, 
+        tanggal_mulai: null, 
+        tanggal_selesai: null 
+      }).eq('id', id).select();
+
+      if (error) throw error;
+      
+      // Validasi RLS saat menghapus
+      if (!data || data.length === 0) {
+        throw new Error("⛔ Hapus diblokir Supabase! RLS belum dibuka.");
+      }
+
       fetchDivisiData();
     } catch (err) { 
       alert(err.message); 
@@ -101,53 +122,103 @@ export default function Divisi() {
 
   const filteredDivisi = dataDivisi.filter(item => item.nama.toLowerCase().includes(search.toLowerCase()));
 
-  if (loading) return <DashboardLayout><div className="flex justify-center items-center h-screen text-white"><Loader2 className="animate-spin" size={30} /></div></DashboardLayout>;
+  if (loading) {
+    return (
+      <DashboardLayout>
+        <div className="flex justify-center items-center h-screen text-slate-800">
+          <Loader2 className="animate-spin text-blue-600 mr-3" size={30} />
+          <span className="font-semibold text-lg">Memuat Data Divisi...</span>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
-      <div className={`transform transition-all duration-1000 ${isMounted ? "opacity-100" : "opacity-0"}`}>
+      <div className={`transform transition-all duration-1000 ${isMounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"}`}>
         
         {/* HEADER */}
-        <div className="bg-gradient-to-r from-blue-700 to-slate-900 rounded-[35px] p-10 text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-5">
-          <div>
-            <h1 className="text-5xl font-black">Data Divisi Perusahaan</h1>
-            <p className="text-blue-100 mt-5">Kelola departemen dan penugasan personel secara terpusat.</p>
+        <div className="relative bg-gradient-to-r from-blue-900 via-slate-800 to-slate-900 rounded-[35px] p-10 text-white shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-6 overflow-hidden">
+          <div className="absolute top-[-50px] right-[-50px] w-48 h-48 bg-blue-500/20 rounded-full blur-3xl animate-pulse"></div>
+          
+          <div className="relative z-10 flex items-center gap-5">
+            <div className="bg-blue-500/20 p-4 rounded-2xl border border-blue-400/30">
+              <Building2 size={36} className="text-blue-300" />
+            </div>
+            <div>
+              <h1 className="text-4xl lg:text-5xl font-black tracking-tight">Data Divisi</h1>
+              <p className="text-blue-200 mt-2 text-sm lg:text-base font-medium">Kelola departemen, manager, dan penugasan personel secara terpusat.</p>
+            </div>
           </div>
+          
           <button 
             onClick={() => setShowModal(true)}
-            className="bg-blue-600 hover:bg-blue-500 active:scale-95 px-6 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all h-fit shadow-lg"
+            className="relative z-10 bg-blue-600 hover:bg-blue-500 active:scale-95 px-6 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all h-fit shadow-lg shadow-blue-600/30 border border-blue-400/50"
           >
-            <Plus size={22} /> Tambah Divisi Baru
+            <Plus size={22} /> Tambah Divisi
           </button>
         </div>
 
         {/* SEARCH BAR */}
-        <div className="bg-[#1f2937] px-5 py-4 rounded-2xl flex items-center gap-4 w-full lg:w-[400px] border border-gray-700 mt-8">
+        <div className="bg-[#1f2937] px-5 py-4 rounded-2xl flex items-center gap-4 w-full lg:w-[450px] border border-gray-700 mt-8 focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent transition-all shadow-md">
           <Search className="text-gray-400" size={22} />
           <input
             type="text"
             placeholder="Cari nama divisi..."
-            className="bg-transparent outline-none w-full text-white placeholder-gray-500"
+            className="bg-transparent outline-none w-full text-white placeholder-gray-500 font-medium"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+          {search && (
+            <button onClick={() => setSearch("")} className="text-gray-500 hover:text-white">
+              <X size={18} />
+            </button>
+          )}
         </div>
 
+        {/* EMPTY STATE PENCARIAN */}
+        {filteredDivisi.length === 0 && (
+          <div className="flex flex-col items-center justify-center mt-20 text-gray-500">
+            <Building2 size={60} className="mb-4 opacity-20" />
+            <p className="text-xl font-semibold text-gray-400">Divisi tidak ditemukan.</p>
+            <p className="text-sm mt-2">Coba gunakan kata kunci pencarian lain.</p>
+          </div>
+        )}
+
         {/* DIVISI CARDS */}
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mt-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mt-8">
           {filteredDivisi.map((item) => {
             const anggota = dataPegawai.filter(p => p.position === item.nama);
             return (
-              <div key={item.id} className="bg-[#1f2937] border border-gray-800 rounded-[30px] p-7 group flex flex-col justify-between shadow-lg">
-                <div>
-                  <h2 className="text-3xl font-black text-white">{item.nama}</h2>
-                  <p className="text-gray-400 mt-1">Manager: <span className="text-blue-400 font-semibold">{item.manager}</span></p>
+              <div key={item.id} className="bg-[#111827] border border-gray-800 rounded-[30px] flex flex-col justify-between shadow-xl hover:shadow-blue-900/20 hover:-translate-y-1 hover:border-blue-500/50 transition-all duration-300 relative overflow-hidden group">
+                
+                {/* Garis Warna Header Kartu */}
+                <div className={`h-2 w-full bg-gradient-to-r ${item.warna || 'from-blue-500 to-cyan-400'}`}></div>
+                
+                <div className="p-7">
+                  <div className="flex justify-between items-start">
+                    <h2 className="text-2xl font-black text-white leading-tight">{item.nama}</h2>
+                    <div className="bg-gray-800/50 text-gray-300 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 border border-gray-700">
+                      <Users size={12} /> {anggota.length}
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-3 mt-5 text-gray-400 bg-[#1f2937]/50 p-3 rounded-xl border border-gray-800/50">
+                    <div className="bg-blue-500/20 p-2 rounded-lg text-blue-400">
+                      <Briefcase size={18} />
+                    </div>
+                    <div>
+                      <p className="text-[11px] uppercase tracking-wider font-semibold text-gray-500">Manager</p>
+                      <p className="font-bold text-gray-200">{item.manager}</p>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex gap-4 mt-8">
-                  <button onClick={() => { setSelectedDivisi(item); setShowDetailModal(true); }} className="flex-1 bg-blue-600 hover:bg-blue-500 py-3 rounded-xl font-bold text-white transition-colors">
-                    Detail Personel ({anggota.length})
+
+                <div className="px-7 pb-7 flex gap-3 mt-2">
+                  <button onClick={() => { setSelectedDivisi(item); setShowDetailModal(true); }} className="flex-1 bg-[#1f2937] hover:bg-blue-600 border border-gray-700 hover:border-transparent py-3 rounded-xl font-bold text-gray-300 hover:text-white transition-all text-sm flex justify-center items-center gap-2">
+                    <Contact size={18} /> Detail Staf
                   </button>
-                  <button onClick={() => handleHapusDivisi(item.id, item.nama)} className="bg-red-900/30 text-red-400 hover:bg-red-600 hover:text-white px-6 rounded-xl transition-all">
+                  <button onClick={() => handleHapusDivisi(item.id, item.nama)} className="bg-[#1f2937] hover:bg-red-600 border border-gray-700 hover:border-transparent text-gray-400 hover:text-white px-5 rounded-xl transition-all flex justify-center items-center">
                     <Trash2 size={18}/>
                   </button>
                 </div>
@@ -158,109 +229,139 @@ export default function Divisi() {
       </div>
 
       {/* MODAL TAMBAH DIVISI */}
-{showModal && (
-  <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-5">
-    <div className="bg-[#111827] w-full max-w-md rounded-[35px] p-8 text-white border border-gray-800 shadow-2xl">
-      <h2 className="text-2xl font-black mb-5">Tambah Divisi Baru</h2>
-      <div className="space-y-4">
-        <div>
-          <label className="text-sm text-gray-400 block mb-2">Nama Divisi</label>
-          <input type="text" className="w-full bg-[#1f2937] px-4 py-3 rounded-xl outline-none text-white border border-transparent focus:border-blue-500"
-            value={form.nama} onChange={(e) => setForm({...form, nama: e.target.value})} placeholder="Contoh: Divisi Keuangan"/>
-        </div>
-        
-        {/* --- BAGIAN INI YANG DIUBAH MENJADI DROPDOWN --- */}
-        <div>
-          <label className="text-sm text-gray-400 block mb-2">Nama Manager / Kepala</label>
-          <select 
-            className="w-full bg-[#1f2937] px-4 py-3 rounded-xl outline-none text-white border border-transparent focus:border-blue-500 cursor-pointer"
-            value={form.manager} 
-            onChange={(e) => setForm({...form, manager: e.target.value})}
-          >
-            <option value="" disabled>-- Pilih Manager dari Pegawai --</option>
-            {dataPegawai.length > 0 ? (
-              dataPegawai.map((pegawai) => (
-                <option key={pegawai.id} value={pegawai.full_name}>
-                  {pegawai.full_name} {pegawai.position ? `(${pegawai.position})` : ''}
-                </option>
-              ))
-            ) : (
-              <option value="" disabled>Memuat data pegawai...</option>
-            )}
-          </select>
-        </div>
-        {/* ------------------------------------------------ */}
-
-      </div>
-      <div className="flex gap-3 mt-6">
-        <button onClick={() => setShowModal(false)} className="flex-1 bg-gray-800 py-3 rounded-xl font-semibold">Batal</button>
-        <button onClick={handleTambahDivisi} disabled={actionLoading} className="flex-1 bg-blue-600 py-3 rounded-xl font-semibold flex items-center justify-center">
-          {actionLoading ? <Loader2 className="animate-spin" size={20} /> : "Simpan"}
-        </button>
-      </div>
-    </div>
-  </div>
-)}
-
-      {/* MODAL DETAIL PERSONEL */}
-      {showDetailModal && selectedDivisi && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-5">
-          <div className="bg-[#111827] w-full max-w-5xl rounded-[35px] p-10 text-white border border-gray-800 shadow-2xl max-h-[85vh] overflow-y-auto">
-            <div className="flex justify-between items-center border-b border-gray-800 pb-5 mb-6">
-              <div>
-                <h2 className="text-3xl font-black">{selectedDivisi.nama}</h2>
-                <p className="text-gray-400 text-sm">Daftar staf yang tergabung ke dalam divisi ini.</p>
-              </div>
-              <button onClick={() => setShowDetailModal(false)} className="p-2 bg-gray-800 rounded-full hover:bg-gray-700">
-                <X size={20} />
+      {showModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-5">
+          <div className="bg-[#111827] w-full max-w-md rounded-[35px] p-8 text-white border border-gray-700 shadow-2xl transform transition-all">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-black flex items-center gap-3">
+                <Building2 className="text-blue-500" /> Tambah Divisi
+              </h2>
+              <button onClick={() => setShowModal(false)} className="text-gray-500 hover:text-white transition-colors">
+                <X size={24} />
               </button>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead>
+            <div className="space-y-5">
+              <div>
+                <label className="text-sm font-semibold text-gray-400 block mb-2">Nama Divisi</label>
+                <input type="text" className="w-full bg-[#1f2937] px-4 py-3.5 rounded-xl outline-none text-white border border-gray-700 focus:border-blue-500 transition-colors"
+                  value={form.nama} onChange={(e) => setForm({...form, nama: e.target.value})} placeholder="Contoh: Divisi Keuangan"/>
+              </div>
+              
+              <div>
+                <label className="text-sm font-semibold text-gray-400 block mb-2 flex items-center gap-2">
+                  Manager / Kepala <UserPlus size={14} className="text-blue-400"/>
+                </label>
+                <select 
+                  className="w-full bg-[#1f2937] px-4 py-3.5 rounded-xl outline-none text-white border border-gray-700 focus:border-blue-500 cursor-pointer transition-colors"
+                  value={form.manager} 
+                  onChange={(e) => setForm({...form, manager: e.target.value})}
+                >
+                  <option value="" disabled>-- Pilih Manager --</option>
+                  {dataPegawai.length > 0 ? (
+                    dataPegawai.map((pegawai) => (
+                      <option key={pegawai.id} value={pegawai.full_name}>
+                        {pegawai.full_name} {pegawai.position ? `— ${pegawai.position}` : ''}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="" disabled>Memuat data...</option>
+                  )}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-8">
+              <button onClick={() => setShowModal(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 py-3.5 rounded-xl font-bold transition-colors">Batal</button>
+              <button onClick={handleTambahDivisi} disabled={actionLoading} className="flex-1 bg-blue-600 hover:bg-blue-500 py-3.5 rounded-xl font-bold flex items-center justify-center transition-colors">
+                {actionLoading ? <Loader2 className="animate-spin" size={20} /> : "Simpan Divisi"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DETAIL PERSONEL */}
+      {showDetailModal && selectedDivisi && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-5 overflow-y-auto py-10">
+          <div className="bg-[#111827] w-full max-w-6xl rounded-[35px] text-white border border-gray-700 shadow-2xl flex flex-col my-auto max-h-[90vh]">
+            
+            {/* Header Modal Detail */}
+            <div className="p-8 border-b border-gray-800 flex justify-between items-center shrink-0 bg-[#1f2937]/30 rounded-t-[35px]">
+              <div className="flex items-center gap-4">
+                <div className="bg-blue-600 p-3 rounded-2xl shadow-lg shadow-blue-600/20">
+                  <Users size={28} className="text-white" />
+                </div>
+                <div>
+                  <h2 className="text-3xl font-black text-white">{selectedDivisi.nama}</h2>
+                  <p className="text-blue-400 font-medium text-sm mt-1">Manager: {selectedDivisi.manager}</p>
+                </div>
+              </div>
+              <button onClick={() => setShowDetailModal(false)} className="p-2 bg-gray-800 rounded-full hover:bg-gray-700 hover:text-white text-gray-400 transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Isi Tabel */}
+            <div className="overflow-x-auto overflow-y-auto flex-1 p-8 rounded-b-[35px] custom-scrollbar">
+              <table className="w-full text-left border-collapse">
+                <thead className="sticky top-0 bg-[#111827] z-10 shadow-sm">
                   <tr className="text-gray-400 border-b border-gray-800 text-sm">
-                    <th className="pb-4 font-medium">Nama Pegawai</th>
-                    <th className="pb-4 font-medium">Email</th>
-                    <th className="pb-4 font-medium">Target Proyek</th> {/* Mengubah Proyek Aktif -> Target Proyek */}
-                    <th className="pb-4 font-medium">Lokasi</th>
-                    <th className="pb-4 text-center font-medium">Aksi Penugasan</th>
+                    <th className="pb-4 font-semibold uppercase tracking-wider">Nama Pegawai</th>
+                    <th className="pb-4 font-semibold uppercase tracking-wider">Target Proyek</th>
+                    <th className="pb-4 font-semibold uppercase tracking-wider">Lokasi</th>
+                    <th className="pb-4 text-center font-semibold uppercase tracking-wider">Aksi Penugasan</th>
                   </tr>
                 </thead>
                 <tbody className="text-sm divide-y divide-gray-800/50">
                   {dataPegawai.filter(p => p.position === selectedDivisi.nama).length === 0 ? (
                     <tr>
-                      <td colSpan="5" className="text-center py-8 text-gray-500 italic">Belum ada pegawai di divisi ini.</td>
+                      <td colSpan="4" className="text-center py-16 text-gray-500">
+                        <Users size={40} className="mx-auto mb-3 opacity-20" />
+                        <p className="font-semibold text-lg">Belum ada staf</p>
+                        <p className="text-xs mt-1">Staf dengan jabatan {selectedDivisi.nama} akan otomatis muncul di sini.</p>
+                      </td>
                     </tr>
                   ) : (
                     dataPegawai.filter(p => p.position === selectedDivisi.nama).map((pegawai) => (
-                      <tr key={pegawai.id} className="hover:bg-gray-800/30">
-                        <td className="py-4 font-bold text-white">{pegawai.full_name}</td>
-                        <td className="py-4 text-gray-400">{pegawai.email}</td>
+                      <tr key={pegawai.id} className="hover:bg-gray-800/30 transition-colors">
+                        <td className="py-5">
+                          <p className="font-bold text-white text-base">{pegawai.full_name}</p>
+                          <p className="text-gray-500 text-xs mt-0.5">{pegawai.email}</p>
+                        </td>
                         
-                        {/* REFAKTOR: Menampilkan Nama Proyek beserta rentang waktu */}
-                        <td className="py-4">
+                        <td className="py-5">
                           {pegawai.nama_proyek ? (
-                            <div className="flex flex-col gap-1.5">
-                              <span className="text-blue-300 font-semibold bg-blue-500/10 px-2 py-1 rounded text-xs w-fit">
+                            <div className="flex flex-col gap-1.5 items-start">
+                              <span className="text-blue-300 font-bold bg-blue-500/10 border border-blue-500/20 px-3 py-1.5 rounded-lg text-xs">
                                 {pegawai.nama_proyek}
                               </span>
                               {pegawai.tanggal_mulai && pegawai.tanggal_selesai ? (
-                                <div className="flex items-center gap-1 text-[11px] text-gray-400">
-                                  <CalendarDays size={12} className="text-blue-500" />
-                                  <span>{pegawai.tanggal_mulai} s/d {pegawai.tanggal_selesai}</span>
+                                <div className="flex items-center gap-1.5 text-[11px] font-medium text-gray-400 bg-gray-800 px-2 py-1 rounded-md">
+                                  <CalendarDays size={12} className="text-blue-400" />
+                                  <span>{pegawai.tanggal_mulai} <span className="text-gray-600 mx-1">s/d</span> {pegawai.tanggal_selesai}</span>
                                 </div>
                               ) : (
-                                <span className="text-gray-500 text-[11px] italic">Periode belum diatur</span>
+                                <span className="text-yellow-500/80 text-[11px] italic bg-yellow-500/10 px-2 py-0.5 rounded">Periode belum diatur</span>
                               )}
                             </div>
                           ) : (
-                            <span className="text-gray-600 italic text-xs">Standby</span>
+                            <span className="text-gray-500 bg-gray-800 px-3 py-1.5 rounded-lg text-xs font-semibold">Standby / Available</span>
                           )}
                         </td>
 
-                        <td className="py-4 text-gray-400">{pegawai.proyek_lokasi || "-"}</td>
-                        <td className="py-4">
+                        <td className="py-5 text-gray-300 font-medium">
+                          {pegawai.proyek_lokasi ? (
+                            <div className="flex items-center gap-1.5">
+                              <MapPin size={14} className="text-red-400" />
+                              {pegawai.proyek_lokasi}
+                            </div>
+                          ) : (
+                            <span className="text-gray-600">-</span>
+                          )}
+                        </td>
+                        
+                        <td className="py-5">
                           <div className="flex justify-center gap-2">
                             <button 
                               onClick={() => {
@@ -273,16 +374,16 @@ export default function Divisi() {
                                 });
                                 setShowEditPenugasanModal(true);
                               }}
-                              className="bg-blue-500/10 text-blue-400 hover:bg-blue-600 hover:text-white px-3 py-1.5 rounded-lg text-xs font-semibold"
+                              className="bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600 hover:text-white px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
                             >
-                              Atur Proyek
+                              <Pencil size={12} /> {pegawai.nama_proyek ? 'Edit' : 'Tugaskan'}
                             </button>
                             {pegawai.nama_proyek && (
                               <button 
                                 onClick={() => handleHapusPenugasan(pegawai.id, pegawai.full_name)}
-                                className="bg-red-500/10 text-red-400 hover:bg-red-600 hover:text-white px-3 py-1.5 rounded-lg text-xs font-semibold"
+                                className="bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-600 hover:text-white px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
                               >
-                                Lepas
+                                <X size={14} /> Lepas
                               </button>
                             )}
                           </div>
@@ -300,36 +401,41 @@ export default function Divisi() {
       {/* MODAL EDIT PENUGASAN PROYEK */}
       {showEditPenugasanModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60] p-5">
-          <div className="bg-[#111827] w-full max-w-md rounded-[30px] p-8 text-white border border-gray-800 shadow-2xl">
-            <h3 className="text-xl font-bold mb-4">Pengaturan Penugasan Proyek</h3>
+          <div className="bg-[#1f2937] w-full max-w-md rounded-[30px] p-8 text-white border border-gray-700 shadow-2xl">
+            <h3 className="text-2xl font-black mb-6 flex items-center gap-2">
+              <TrendingUp className="text-blue-500" /> Penugasan Proyek
+            </h3>
             <div className="space-y-4">
               <div>
-                <label className="text-xs text-gray-400 block mb-1">Nama Proyek</label>
-                <input type="text" className="w-full bg-[#1f2937] px-4 py-2.5 rounded-xl outline-none text-sm text-white"
-                  value={editPenugasan.nama_proyek} onChange={(e) => setEditPenugasan({...editPenugasan, nama_proyek: e.target.value})} />
+                <label className="text-xs font-semibold text-gray-400 block mb-2">Nama Target Proyek</label>
+                <input type="text" className="w-full bg-[#111827] px-4 py-3 rounded-xl outline-none text-sm text-white border border-gray-700 focus:border-blue-500 transition-colors"
+                  value={editPenugasan.nama_proyek} onChange={(e) => setEditPenugasan({...editPenugasan, nama_proyek: e.target.value})} placeholder="Cth: Pembangunan Rel Binjai" />
               </div>
               <div>
-                <label className="text-xs text-gray-400 block mb-1">Lokasi Proyek</label>
-                <input type="text" className="w-full bg-[#1f2937] px-4 py-2.5 rounded-xl outline-none text-sm text-white"
-                  value={editPenugasan.proyek_lokasi} onChange={(e) => setEditPenugasan({...editPenugasan, proyek_lokasi: e.target.value})} />
+                <label className="text-xs font-semibold text-gray-400 block mb-2">Lokasi Penugasan</label>
+                <div className="relative">
+                  <MapPin size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
+                  <input type="text" className="w-full bg-[#111827] pl-10 pr-4 py-3 rounded-xl outline-none text-sm text-white border border-gray-700 focus:border-blue-500 transition-colors"
+                    value={editPenugasan.proyek_lokasi} onChange={(e) => setEditPenugasan({...editPenugasan, proyek_lokasi: e.target.value})} placeholder="Cth: Medan" />
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs text-gray-400 block mb-1">Tanggal Mulai</label>
-                  <input type="date" className="w-full bg-[#1f2937] px-3 py-2 rounded-xl outline-none text-xs text-white [color-scheme:dark]"
+                  <label className="text-xs font-semibold text-gray-400 block mb-2">Tanggal Mulai</label>
+                  <input type="date" className="w-full bg-[#111827] px-3 py-3 rounded-xl outline-none text-sm text-white border border-gray-700 focus:border-blue-500 [color-scheme:dark]"
                     value={editPenugasan.tanggal_mulai} onChange={(e) => setEditPenugasan({...editPenugasan, tanggal_mulai: e.target.value})} />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-400 block mb-1">Tanggal Selesai</label>
-                  <input type="date" className="w-full bg-[#1f2937] px-3 py-2 rounded-xl outline-none text-xs text-white [color-scheme:dark]"
+                  <label className="text-xs font-semibold text-gray-400 block mb-2">Tanggal Selesai</label>
+                  <input type="date" className="w-full bg-[#111827] px-3 py-3 rounded-xl outline-none text-sm text-white border border-gray-700 focus:border-blue-500 [color-scheme:dark]"
                     value={editPenugasan.tanggal_selesai} onChange={(e) => setEditPenugasan({...editPenugasan, tanggal_selesai: e.target.value})} />
                 </div>
               </div>
             </div>
-            <div className="flex gap-3 mt-6">
-              <button onClick={() => setShowEditPenugasanModal(false)} className="flex-1 bg-gray-800 py-2.5 rounded-xl text-sm font-semibold">Batal</button>
-              <button onClick={handleSimpanPenugasan} disabled={actionLoading} className="flex-1 bg-blue-600 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center">
-                {actionLoading ? <Loader2 className="animate-spin" size={18} /> : "Simpan"}
+            <div className="flex gap-3 mt-8">
+              <button onClick={() => setShowEditPenugasanModal(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 py-3 rounded-xl text-sm font-bold transition-colors">Batal</button>
+              <button onClick={handleSimpanPenugasan} disabled={actionLoading} className="flex-1 bg-blue-600 hover:bg-blue-500 py-3 rounded-xl text-sm font-bold flex items-center justify-center transition-colors">
+                {actionLoading ? <Loader2 className="animate-spin" size={18} /> : "Simpan Target"}
               </button>
             </div>
           </div>

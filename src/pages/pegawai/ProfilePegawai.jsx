@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import DashboardLayout from "../../layouts/PegawaiLayout";
 import { supabase } from "../../supabaseClient";
 import {
@@ -9,14 +9,16 @@ import {
   Shield,
   Loader2,
   AlertCircle,
-  Briefcase
+  Briefcase,
+  Camera,
+  CheckCircle2
 } from "lucide-react";
 
 export default function ProfilePegawai() {
-  // 1. State Animasi & Referensi
   const [isMounted, setIsMounted] = useState(false);
+  const fileInputRef = useRef(null);
   
-  // 2. State untuk Data Karyawan (Hanya untuk ditampilkan)
+  // State untuk Data Karyawan (Hanya untuk ditampilkan)
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -26,9 +28,10 @@ export default function ProfilePegawai() {
 
   // State untuk Atribut UI
   const [loading, setLoading] = useState(true);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [message, setMessage] = useState({ type: "", text: "" });
 
-  // 3. Tarik Data Profil Saat Halaman Dimuat
+  // Tarik Data Profil Saat Halaman Dimuat
   useEffect(() => {
     setIsMounted(true);
 
@@ -66,6 +69,55 @@ export default function ProfilePegawai() {
     fetchProfileData();
   }, []);
 
+  // FUNGSI UPLOAD FOTO PROFIL (Hanya ini yang bisa diedit)
+  const handleAvatarUpload = async (event) => {
+    try {
+      setUploadingAvatar(true);
+      setMessage({ type: "", text: "" });
+
+      const file = event.target.files[0];
+      if (!file) return;
+
+      if (file.size > 2 * 1024 * 1024) {
+        throw new Error("Ukuran foto terlalu besar! Maksimal 2MB.");
+      }
+
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}_${Date.now()}.${fileExt}`; 
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(fileName, file, { upsert: true });
+
+      if (uploadError) throw new Error("Gagal upload gambar. Pastikan bucket 'avatars' sudah dibuat dan di-set Public.");
+
+      const { data: publicUrlData } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(fileName);
+
+      const newAvatarUrl = publicUrlData.publicUrl;
+      setAvatarUrl(newAvatarUrl);
+
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ avatar_url: newAvatarUrl })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      setMessage({ type: "success", text: "Foto profil berhasil diperbarui!" });
+      setTimeout(() => setMessage({ type: "", text: "" }), 3000);
+
+    } catch (error) {
+      setMessage({ type: "error", text: error.message });
+    } finally {
+      setUploadingAvatar(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white">
@@ -93,10 +145,14 @@ export default function ProfilePegawai() {
           </div>
         </div>
 
-        {/* FEEDBACK BANNER */}
+        {/* FEEDBACK BANNER (Sukses / Error) */}
         {message.text && (
-          <div className="mt-6 p-4 rounded-2xl border flex items-center gap-3 bg-red-500/10 border-red-500/30 text-red-400">
-            <AlertCircle size={22} className="flex-shrink-0" />
+          <div className={`mt-6 p-4 rounded-2xl border flex items-center gap-3 ${
+            message.type === "success" 
+              ? "bg-green-500/10 border-green-500/30 text-green-400" 
+              : "bg-red-500/10 border-red-500/30 text-red-400"
+          }`}>
+            {message.type === "success" ? <CheckCircle2 size={22} className="flex-shrink-0" /> : <AlertCircle size={22} className="flex-shrink-0" />}
             <p className="font-medium text-sm">{message.text}</p>
           </div>
         )}
@@ -104,17 +160,43 @@ export default function ProfilePegawai() {
         {/* CONTENT */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mt-8">
           
-          {/* LEFT: AVATAR DISPLAY (Read-Only) */}
+          {/* LEFT: AVATAR DISPLAY (Bisa di-klik untuk ganti foto) */}
           <div className="bg-[#111827] rounded-[35px] p-8 text-white text-center flex flex-col justify-center border border-gray-800 shadow-xl transition-all hover:border-gray-700">
-            <div className="relative w-[140px] h-[140px] mx-auto">
-              {/* Gambar Avatar atau Default User Icon */}
-              <div className="w-full h-full rounded-full bg-blue-600 flex items-center justify-center shadow-inner overflow-hidden border-4 border-slate-800">
-                {avatarUrl ? (
-                  <img src={avatarUrl} alt="Avatar Karyawan" className="w-full h-full object-cover" />
+            
+            {/* AVATAR CLICKABLE AREA */}
+            <div 
+              className="relative w-[140px] h-[140px] mx-auto group cursor-pointer"
+              onClick={() => !uploadingAvatar && fileInputRef.current.click()}
+            >
+              <div className="w-full h-full rounded-full bg-blue-600 flex items-center justify-center shadow-inner overflow-hidden border-4 border-slate-800 relative transition-all group-hover:border-blue-500">
+                {uploadingAvatar ? (
+                  <div className="flex flex-col items-center justify-center text-white">
+                    <Loader2 className="animate-spin mb-2" size={30} />
+                    <span className="text-[10px] font-bold">Uploading...</span>
+                  </div>
+                ) : avatarUrl ? (
+                  <img src={avatarUrl} alt="Avatar Karyawan" className="w-full h-full object-cover group-hover:blur-[2px] transition-all" />
                 ) : (
-                  <User size={70} className="text-white opacity-80" />
+                  <User size={70} className="text-white opacity-80 group-hover:blur-[2px] transition-all" />
+                )}
+                
+                {/* HOVER OVERLAY */}
+                {!uploadingAvatar && (
+                  <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                    <Camera size={26} className="text-white mb-1" />
+                    <span className="text-white text-xs font-bold tracking-wide">Ubah Foto</span>
+                  </div>
                 )}
               </div>
+
+              {/* INPUT FILE (Disembunyikan) */}
+              <input 
+                type="file" 
+                accept="image/png, image/jpeg, image/jpg" 
+                className="hidden" 
+                ref={fileInputRef} 
+                onChange={handleAvatarUpload}
+              />
             </div>
 
             <h2 className="text-3xl font-black mt-8 tracking-tight">{fullName || "Nama Belum Diatur"}</h2>
@@ -122,7 +204,7 @@ export default function ProfilePegawai() {
             
             <div className="mt-4">
               <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-5 py-2 rounded-2xl inline-block font-bold text-xs uppercase tracking-wider shadow-sm">
-                Employee Active
+                Pegawai
               </span>
             </div>
           </div>

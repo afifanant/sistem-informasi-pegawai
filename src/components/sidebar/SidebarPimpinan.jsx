@@ -32,7 +32,7 @@ export default function SidebarPimpinan() {
           </div>
           <div>
             <h1 className="text-2xl font-black">PIMPINAN</h1>
-            <p className="text-blue-200">panel Pimpinan</p>
+            <p className="text-blue-200 text-sm">Panel Pimpinan</p>
           </div>
         </div>
 
@@ -63,16 +63,14 @@ export default function SidebarPimpinan() {
 
       {/* PROFILE & LOGOUT */}
       <div className="bg-white/5 rounded-3xl p-5">
-        <div className="flex items-center gap-4">
-          <img src="https://i.pravatar.cc/100?img=12" alt="Profile" className="w-14 h-14 rounded-full" />
-          <div>
-            <h1 className="font-bold text-lg">Pimpinan</h1>
-            <p className="text-blue-300 text-sm">Director Company</p>
-          </div>
+        {/* Layout disesuaikan agar rapi tanpa foto profil */}
+        <div className="text-center mb-2">
+          <h1 className="font-bold text-lg">Pimpinan</h1>
+          <p className="text-blue-300 text-sm">Director Company</p>
         </div>
         <button 
           onClick={handleLogout}
-          className="w-full mt-5 bg-red-500/10 hover:bg-red-600 text-red-500 hover:text-white transition py-3 rounded-2xl font-bold flex items-center justify-center gap-2"
+          className="w-full mt-4 bg-red-500/10 hover:bg-red-600 text-red-500 hover:text-white transition py-3 rounded-2xl font-bold flex items-center justify-center gap-2"
         >
           <LogOut size={18} />
           Logout

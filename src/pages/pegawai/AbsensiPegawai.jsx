@@ -10,7 +10,8 @@ import {
   Loader2,
   AlertCircle,
   FileText,
-  UploadCloud // <-- Import ikon baru
+  UploadCloud,
+  LocateFixed 
 } from "lucide-react";
 
 export default function AbsensiPegawai() {
@@ -33,7 +34,7 @@ export default function AbsensiPegawai() {
   const [statusHariIni, setStatusHariIni] = useState(null); 
   const [todayRecordId, setTodayRecordId] = useState(null);
 
-  // State Izin (Diperbarui)
+  // State Izin
   const [showModalIzin, setShowModalIzin] = useState(false);
   const [kategoriIzin, setKategoriIzin] = useState("Sakit");
   const [keteranganIzin, setKeteranganIzin] = useState("");
@@ -51,7 +52,7 @@ export default function AbsensiPegawai() {
     return Math.round(R * c);
   };
 
-  // FUNGSI BARU: Mengubah Koordinat menjadi Nama Alamat via OpenStreetMap
+  // Mengubah Koordinat menjadi Nama Alamat via OpenStreetMap
   const dapatkanAlamat = async (lat, lng) => {
     try {
       const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
@@ -63,8 +64,9 @@ export default function AbsensiPegawai() {
     }
   };
 
-  // 3. Ambil Lokasi Pegawai
-  useEffect(() => {
+  // 3. FUNGSI BARU: Ambil/Refresh Lokasi Pegawai secara Manual & Otomatis
+  const fetchLokasiSaatIni = () => {
+    setLokasiLoading(true);
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
@@ -78,11 +80,15 @@ export default function AbsensiPegawai() {
           console.error("Gagal mendapat lokasi:", error);
           setLokasiLoading(false);
         },
-        { enableHighAccuracy: true }
+        { enableHighAccuracy: true, maximumAge: 0 } 
       );
     } else {
       setLokasiLoading(false);
     }
+  };
+
+  useEffect(() => {
+    fetchLokasiSaatIni();
   }, []);
 
   // 4. Mengambil Data Absensi Hari Ini
@@ -129,7 +135,7 @@ export default function AbsensiPegawai() {
   // 5. Eksekusi Hadir / Telat
   const handleHadir = async () => {
     if (jarak > MAKS_RADIUS) {
-      return alert(`Jarak Anda ${(jarak/1000).toFixed(1)} km dari kampus. Anda harus berada di dalam radius 10 km untuk absen Hadir!`);
+      return alert(`Jarak Anda ${(jarak/1000).toFixed(1)} km dari kampus. Anda harus berada di dalam radius ${(MAKS_RADIUS/1000)} km untuk absen Hadir!`);
     }
 
     setActionLoading(true);
@@ -140,7 +146,6 @@ export default function AbsensiPegawai() {
       const sekarang = new Date();
       const jamSekarang = sekarang.toTimeString().split(' ')[0];
 
-      // LOGIKA BATAS WAKTU ABSEN: Jam 7 Pagi (07:00:00)
       const batasAbsen = new Date();
       batasAbsen.setHours(7, 0, 0, 0);
 
@@ -201,35 +206,31 @@ export default function AbsensiPegawai() {
     }
   };
 
-// 7. Eksekusi Izin (Diperbarui: Menyertakan Lokasi Saat Izin diajukan)
+  // 7. Eksekusi Izin (Ditambah penyimpanan Waktu Pengajuan Izin)
   const handleIzin = async () => {
     if (!keteranganIzin) return alert("Alasan izin harus diisi!");
-    
-    // Pastikan lokasi sudah didapatkan sebelum submit izin
     if (lokasiLoading) return alert("Sedang melacak lokasi Anda, mohon tunggu sebentar...");
 
     setActionLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       const hariIni = new Date().toISOString().split('T')[0];
+      
+      // Ambil jam saat ini untuk disimpan ke database
+      const jamSekarang = new Date().toTimeString().split(' ')[0];
 
       let fileUrl = null;
 
-      // Logika Upload Bukti Foto/Dokumen ke Supabase Storage
       if (fileBukti) {
         const fileExt = fileBukti.name.split('.').pop();
         const fileName = `${user.id}_${Date.now()}.${fileExt}`;
         
-        // Upload file ke bucket 'bukti_izin'
         const { error: uploadError } = await supabase.storage
           .from('bukti_izin') 
           .upload(fileName, fileBukti);
 
-        if (uploadError) {
-          throw new Error("Gagal mengupload bukti file: " + uploadError.message);
-        }
+        if (uploadError) throw new Error("Gagal mengupload bukti file: " + uploadError.message);
 
-        // Ambil URL public file yang sudah diupload
         const { data: publicUrlData } = supabase.storage
           .from('bukti_izin')
           .getPublicUrl(fileName);
@@ -237,10 +238,7 @@ export default function AbsensiPegawai() {
         fileUrl = publicUrlData.publicUrl;
       }
 
-      // Format keterangan dengan menggabungkan Kategori + Alasan
       const detailKeterangan = `[${kategoriIzin}] ${keteranganIzin}`;
-
-      // --- TAMBAHAN LOGIKA LOKASI IZIN ---
       let detailAlamat = "Lokasi tidak terdeteksi";
       let izinLat = null;
       let izinLng = null;
@@ -250,19 +248,18 @@ export default function AbsensiPegawai() {
         izinLat = lokasi.lat;
         izinLng = lokasi.lng;
       }
-      // ------------------------------------
 
-      // Insert ke tabel absensi beserta data lokasi
       const { error } = await supabase.from('absensi').insert([
         { 
           user_id: user.id, 
-          tanggal: hariIni, 
+          tanggal: hariIni,
+          waktu_masuk: jamSekarang, // <-- JAM IZIN DISIMPAN DI SINI
           status: "Izin", 
           keterangan: detailKeterangan,
           bukti_url: fileUrl,
-          lokasi_hadir: detailAlamat, // Menyimpan nama jalan saat izin
-          lat: izinLat,               // Menyimpan latitude saat izin
-          lng: izinLng                // Menyimpan longitude saat izin
+          lokasi_hadir: detailAlamat, 
+          lat: izinLat,
+          lng: izinLng 
         }
       ]);
       
@@ -270,7 +267,6 @@ export default function AbsensiPegawai() {
 
       alert("Pengajuan Izin Berhasil!");
       
-      // Reset Modal & State
       setShowModalIzin(false);
       setKeteranganIzin("");
       setKategoriIzin("Sakit");
@@ -335,24 +331,27 @@ export default function AbsensiPegawai() {
                     {jarak >= 1000 ? `${(jarak / 1000).toFixed(1)} km` : `${jarak} m`}
                   </h2>
                   <p className={`text-sm mt-1 font-bold ${jarak <= MAKS_RADIUS ? 'text-green-400' : 'text-red-400'}`}>
-                    {jarak <= MAKS_RADIUS ? "Dalam Radius (10 km)" : "Di Luar Jangkauan"}
+                    {jarak <= MAKS_RADIUS ? `Dalam Radius (${MAKS_RADIUS/1000} km)` : "Di Luar Jangkauan"}
                   </p>
                 </div>
               ) : (
                 <p className="text-red-400 mt-2 text-sm font-bold flex items-center"><AlertCircle size={14} className="mr-1"/> Akses Lokasi Ditolak</p>
               )}
             </div>
-            <div className="bg-cyan-500/20 p-4 rounded-2xl text-cyan-400"><MapPin size={28} /></div>
+            <div className="flex flex-col items-center gap-3">
+              <div className="bg-cyan-500/20 p-4 rounded-2xl text-cyan-400"><MapPin size={28} /></div>
+              {/* TOMBOL REFRESH LOKASI MINI */}
+              <button 
+                onClick={fetchLokasiSaatIni} 
+                disabled={lokasiLoading}
+                className="flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold bg-gray-800 hover:bg-gray-700 text-cyan-400 px-3 py-2 rounded-lg transition-all"
+                title="Perbarui Titik Lokasi"
+              >
+                <LocateFixed size={14} className={lokasiLoading ? "animate-pulse" : ""} />
+                Titik
+              </button>
+            </div>
           </div>
-          
-          {lokasi && (
-             <div className="absolute bottom-0 left-0 w-full h-24 opacity-30 pointer-events-none mt-4">
-               <iframe 
-                 width="100%" height="100%" frameBorder="0" scrolling="no"
-                 src={`https://www.openstreetmap.org/export/embed.html?bbox=${lokasi.lng-0.002},${lokasi.lat-0.002},${lokasi.lng+0.002},${lokasi.lat+0.002}&layer=mapnik&marker=${lokasi.lat},${lokasi.lng}`}
-               />
-             </div>
-          )}
         </div>
       </div>
 
@@ -399,7 +398,7 @@ export default function AbsensiPegawai() {
         </button>
       </div>
 
-      {/* --- BAGIAN BARU: PETA LOKASI INTERAKTIF LIVE --- */}
+      {/* --- PETA LOKASI INTERAKTIF LIVE --- */}
       <div className="bg-[#111827] border border-gray-800 rounded-[35px] p-8 mt-8 text-white">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div className="flex items-center gap-3">
@@ -407,16 +406,28 @@ export default function AbsensiPegawai() {
             <h2 className="text-3xl font-black">Lokasi Saat Ini</h2>
           </div>
           
-          {lokasi && (
-            <a
-              href={`https://www.google.com/maps?q=$${lokasi.lat},${lokasi.lng}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2 transition-all w-fit"
+          <div className="flex items-center gap-3">
+            {/* TOMBOL REFRESH LOKASI UTAMA */}
+            <button
+              onClick={fetchLokasiSaatIni}
+              disabled={lokasiLoading}
+              className="bg-gray-800 hover:bg-gray-700 text-cyan-400 px-5 py-2.5 rounded-xl text-sm font-bold border border-gray-700 flex items-center justify-center gap-2 transition-all w-fit disabled:opacity-50"
             >
-              Buka di Google Maps
-            </a>
-          )}
+              {lokasiLoading ? <Loader2 className="animate-spin" size={18}/> : <LocateFixed size={18} />}
+              Sesuaikan Titik
+            </button>
+
+            {lokasi && (
+              <a
+                href={`https://www.google.com/maps?q=$${lokasi.lat},${lokasi.lng}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2 transition-all w-fit"
+              >
+                Buka di Google Maps
+              </a>
+            )}
+          </div>
         </div>
 
         {lokasiLoading ? (
@@ -476,7 +487,6 @@ export default function AbsensiPegawai() {
                       }`}>
                         {item.status}
                       </span>
-                      {/* Kalau ada link bukti (opsional), Anda juga bisa menampilkannya di sini nanti */}
                       {item.keterangan && <span className="text-gray-500 text-xs italic">"{item.keterangan}"</span>}
                     </div>
                   </td>

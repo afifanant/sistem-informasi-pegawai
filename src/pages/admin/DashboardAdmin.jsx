@@ -6,7 +6,6 @@ import {
   UserCheck,
   Activity,
   TrendingUp,
-  Briefcase,
   Clock3,
   Loader2
 } from "lucide-react";
@@ -24,7 +23,6 @@ export default function DashboardAdmin() {
     produktivitas: 0
   });
   const [aktivitas, setAktivitas] = useState([]);
-  const [divisiProgress, setDivisiProgress] = useState([]);
 
   // 3. Mesin Penarik Data (Query Aggregator)
   useEffect(() => {
@@ -32,28 +30,32 @@ export default function DashboardAdmin() {
 
     const fetchDashboardData = async () => {
       try {
-        // Ambil waktu hari ini untuk filter absensi
-        const hariIni = new Date().toISOString().split('T')[0];
-
-        // Jalankan 3 Query serentak agar loading lebih cepat (Promise.all)
-        const [resProfiles, resAbsensi, resDivisi] = await Promise.all([
+        // Jalankan Query serentak agar loading lebih cepat
+        const [resProfiles, resAbsensi] = await Promise.all([
           supabase.from('profiles').select('id, status'),
           supabase.from('absensi')
-            .select('id, waktu_masuk, tanggal, profiles(full_name)')
-            .order('waktu_masuk', { ascending: false }),
-          supabase.from('divisi').select('nama, warna')
+            .select('id, created_at, status, profiles(full_name)')
+            .order('created_at', { ascending: false })
         ]);
 
         const profilesData = resProfiles.data || [];
         const absensiData = resAbsensi.data || [];
-        const divisiData = resDivisi.data || [];
+
+        // Penyesuaian waktu Hari Ini (Lokal Indonesia)
+        const todayDateStr = new Date().toLocaleDateString('id-ID');
+        
+        // Filter absensi khusus hari ini berdasarkan created_at
+        const absensiHariIni = absensiData.filter(a => {
+          const absenDateStr = new Date(a.created_at).toLocaleDateString('id-ID');
+          return absenDateStr === todayDateStr;
+        });
 
         // A. Kalkulasi Statistik Pegawai
         const total = profilesData.length;
         const aktif = profilesData.filter(p => p.status === 'Aktif').length;
         
-        const absenHariIni = absensiData.filter(a => a.tanggal === hariIni).length;
-        const rasioKehadiran = total > 0 ? Math.round((absenHariIni / total) * 100) : 0;
+        const jumlahAbsenHariIni = absensiHariIni.length;
+        const rasioKehadiran = total > 0 ? Math.round((jumlahAbsenHariIni / total) * 100) : 0;
         const rasioProduktivitas = total > 0 ? Math.round((aktif / total) * 100) : 0;
 
         setStats({
@@ -63,26 +65,17 @@ export default function DashboardAdmin() {
           produktivitas: rasioProduktivitas
         });
 
-        // B. Mapping Log Aktivitas (Maksimal 5 aktivitas terbaru hari ini)
-        const logTerbaru = absensiData
-          .filter(a => a.tanggal === hariIni)
-          .slice(0, 5)
-          .map(a => `${a.profiles?.full_name || 'Pegawai'} melakukan check-in jam ${a.waktu_masuk}`);
+        // B. Mapping Log Aktivitas Realtime (Berdasarkan status & waktu aktual)
+        const logTerbaru = absensiHariIni
+          .slice(0, 8) // Ditingkatkan menjadi 8 log agar layout tidak terlalu kosong
+          .map(a => {
+            const time = new Date(a.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+            const statusText = a.status ? a.status.toLowerCase() : "hadir";
+            return `${a.profiles?.full_name || 'Tanpa Nama'} melakukan presensi ${statusText} pada ${time} WIB`;
+          });
         
         // Fallback jika belum ada yang absen hari ini
-        setAktivitas(logTerbaru.length > 0 ? logTerbaru : ["Belum ada aktivitas absensi hari ini"]);
-
-        // C. Mapping Progress Divisi (Menggantikan Proyek fiktif)
-        // Kita beri nilai progress acak antara 70-100% sebagai simulasi dashboard hidup
-        const mappedDivisi = divisiData.slice(0, 4).map(div => ({
-          nama: div.nama,
-          progress: `${Math.floor(Math.random() * (100 - 70 + 1) + 70)}%`,
-          width: `${Math.floor(Math.random() * (100 - 70 + 1) + 70)}%`
-        }));
-        
-        setDivisiProgress(mappedDivisi.length > 0 ? mappedDivisi : [
-          { nama: "Belum Ada Divisi", progress: "0%", width: "0%" }
-        ]);
+        setAktivitas(logTerbaru.length > 0 ? logTerbaru : ["Belum ada aktivitas absensi hari ini."]);
 
       } catch (error) {
         console.error("Gagal sinkronisasi data admin:", error.message);
@@ -100,24 +93,28 @@ export default function DashboardAdmin() {
       value: stats.totalPegawai,
       icon: <Users size={28} />,
       color: "bg-blue-500",
+      shadow: "shadow-blue-500/20"
     },
     {
       title: "Pegawai Aktif",
       value: stats.pegawaiAktif,
       icon: <UserCheck size={28} />,
       color: "bg-green-500",
+      shadow: "shadow-green-500/20"
     },
     {
       title: "Absensi Hari Ini",
       value: `${stats.persenAbsensi}%`,
       icon: <Activity size={28} />,
       color: "bg-orange-500",
+      shadow: "shadow-orange-500/20"
     },
     {
       title: "Produktivitas",
       value: `${stats.produktivitas}%`,
       icon: <TrendingUp size={28} />,
       color: "bg-purple-500",
+      shadow: "shadow-purple-500/20"
     },
   ];
 
@@ -156,7 +153,7 @@ export default function DashboardAdmin() {
           </div>
         </section>
 
-        {/* STATS (Dinamis dari Database) */}
+        {/* STATS */}
         <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
           {statCards.map((item, index) => (
             <div
@@ -168,7 +165,7 @@ export default function DashboardAdmin() {
                   <p className="text-gray-500 font-medium">{item.title}</p>
                   <h2 className="text-5xl font-black mt-4 text-slate-800">{item.value}</h2>
                 </div>
-                <div className={`${item.color} text-white p-4 rounded-2xl shadow-lg`}>
+                <div className={`${item.color} text-white p-4 rounded-2xl shadow-lg ${item.shadow}`}>
                   {item.icon}
                 </div>
               </div>
@@ -179,17 +176,15 @@ export default function DashboardAdmin() {
         {/* CONTENT */}
         <section className="grid grid-cols-1 xl:grid-cols-3 gap-6 mt-8">
           
-          {/* LEFT COLUMN */}
-          <div className="xl:col-span-2 space-y-6">
-            
-            {/* AKTIVITAS (Log Realtime dari Tabel Absensi) */}
-            <div className="bg-gradient-to-b from-blue-500 to-slate-900 rounded-[35px] p-8 shadow-xl">
+          {/* LEFT COLUMN: AKTIVITAS */}
+          <div className="xl:col-span-2">
+            <div className="bg-[#111827] rounded-[35px] p-8 shadow-xl border border-gray-800 h-full">
               <div className="flex items-center gap-4 mb-8">
-                <div className="bg-blue-600 text-white p-4 rounded-2xl shadow-lg shadow-blue-900/50">
+                <div className="bg-blue-600 text-white p-4 rounded-2xl shadow-lg shadow-blue-500/20">
                   <Clock3 size={28} />
                 </div>
                 <div>
-                  <p className="uppercase tracking-[4px] text-blue-200 text-sm font-semibold">Realtime</p>
+                  <p className="uppercase tracking-[4px] text-blue-400 text-sm font-semibold">Realtime</p>
                   <h2 className="text-4xl font-black text-white tracking-tight">Log Aktivitas</h2>
                 </div>
               </div>
@@ -198,67 +193,37 @@ export default function DashboardAdmin() {
                 {aktivitas.map((item, index) => (
                   <div
                     key={index}
-                    className="bg-white/10 backdrop-blur-md rounded-2xl p-5 flex items-center gap-4 border border-white/20 hover:bg-white/20 transition-colors"
+                    className="bg-[#1f2937] rounded-2xl p-5 flex items-center gap-4 border border-gray-700 hover:border-gray-600 transition-colors"
                   >
-                    <div className="w-3 h-3 rounded-full bg-green-400 shadow-[0_0_10px_rgb(74,222,128,0.8)] animate-pulse"></div>
-                    <p className="font-semibold text-white tracking-wide text-sm md:text-base">
+                    <div className="w-3 h-3 rounded-full bg-green-400 shadow-[0_0_10px_rgb(74,222,128,0.8)] animate-pulse shrink-0"></div>
+                    <p className="font-semibold text-gray-200 tracking-wide text-sm md:text-base">
                       {item}
                     </p>
                   </div>
                 ))}
               </div>
             </div>
-
-            {/* KINERJA DIVISI (Dinamis dari tabel divisi) */}
-            <div className="bg-gradient-to-br from-slate-800 to-blue-950 rounded-[35px] p-8 shadow-xl text-white">
-              <div className="flex items-center gap-4 mb-10">
-                <div className="bg-purple-500 text-white p-4 rounded-2xl shadow-lg shadow-purple-500/20">
-                  <Briefcase size={28} />
-                </div>
-                <div>
-                  <p className="uppercase tracking-[4px] text-gray-400 text-sm font-semibold">Monitoring</p>
-                  <h2 className="text-4xl font-black tracking-tight">Kinerja Divisi</h2>
-                </div>
-              </div>
-
-              <div className="space-y-8">
-                {divisiProgress.map((item, index) => (
-                  <div key={index} className="group">
-                    <div className="flex justify-between mb-3">
-                      <h3 className="font-bold text-lg text-gray-200">{item.nama}</h3>
-                      <span className="font-black text-blue-400">{item.progress}</span>
-                    </div>
-                    <div className="w-full h-5 bg-slate-900/50 rounded-full overflow-hidden shadow-inner">
-                      <div
-                        className="h-full bg-blue-500 rounded-full transition-all duration-1000 ease-out group-hover:bg-blue-400"
-                        style={{ width: item.width }}
-                      ></div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
 
-          {/* RIGHT COLUMN */}
+          {/* RIGHT COLUMN: WIDGETS */}
           <div className="space-y-6">
             
             {/* KARTU STATISTIK MINGGUAN */}
             <div className="bg-gradient-to-br from-blue-600 to-cyan-500 text-white rounded-[35px] p-8 shadow-xl transform transition-transform hover:-translate-y-1">
               <p className="text-blue-100 font-semibold uppercase tracking-wider text-sm">Statistik Kehadiran</p>
               <h2 className="text-7xl font-black mt-6 tracking-tighter">{stats.persenAbsensi}%</h2>
-              <p className="mt-6 leading-relaxed text-blue-50 font-medium">
-                Tingkat partisipasi absensi pegawai hari ini berdasar sinkronisasi database.
+              <p className="mt-6 leading-relaxed text-blue-50 font-medium text-sm">
+                Tingkat partisipasi absensi pegawai secara keseluruhan pada hari ini berdasarkan data real-time.
               </p>
             </div>
 
             {/* STATUS SERVER */}
-            <div className="bg-slate-900 text-white rounded-[35px] p-8 shadow-xl border border-gray-800">
+            <div className="bg-[#111827] text-white rounded-[35px] p-8 shadow-xl border border-gray-800">
               <p className="uppercase tracking-[4px] text-gray-400 text-sm font-semibold">Sistem</p>
               <h2 className="text-4xl font-black mt-4 tracking-tight">Status Server</h2>
-              <div className="flex items-center gap-3 mt-8">
+              <div className="flex items-center gap-3 mt-8 bg-[#1f2937] p-5 rounded-2xl border border-gray-700">
                 <div className="w-4 h-4 rounded-full bg-green-500 shadow-[0_0_10px_rgb(34,197,94,0.8)] animate-pulse"></div>
-                <p className="text-lg font-bold text-gray-200">Koneksi Database Stabil</p>
+                <p className="text-lg font-bold text-gray-200">Koneksi Stabil</p>
               </div>
             </div>
             
