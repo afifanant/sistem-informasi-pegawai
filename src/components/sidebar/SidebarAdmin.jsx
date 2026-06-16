@@ -83,7 +83,7 @@ const handleLogout = () => {
             </h1>
 
             <p className="text-gray-400">
-              Company System
+              PT Sa'adah Dinar
             </p>
           </div>
         </div>

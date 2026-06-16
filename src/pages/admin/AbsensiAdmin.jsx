@@ -8,7 +8,8 @@ import {
   CheckCircle2,
   XCircle,
   TimerReset,
-  Loader2
+  Loader2,
+  MapPin // <-- Ditambahkan untuk icon peta
 } from "lucide-react";
 
 export default function AbsensiAdmin() {
@@ -59,8 +60,9 @@ export default function AbsensiAdmin() {
       setStats({
         hadir: absenHariIni.filter(i => i.status === 'Hadir').length,
         izin: absenHariIni.filter(i => i.status === 'Izin').length,
-        terlambat: absenHariIni.filter(i => i.status === 'Terlambat').length,
-        total: mergedData.length // Total seluruh record absensi yang ada di database
+        // PERBAIKAN: Menghitung status "Telat" sesuai yang dikirim dari halaman pegawai
+        terlambat: absenHariIni.filter(i => i.status === 'Telat' || i.status === 'Terlambat').length, 
+        total: mergedData.length 
       });
 
     } catch (error) {
@@ -193,48 +195,105 @@ export default function AbsensiAdmin() {
                  Tidak ada data absensi yang ditemukan.
                </div>
             ) : (
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-700 text-left text-gray-400">
-                    <th className="pb-5 font-semibold">Tanggal</th>
-                    <th className="pb-5 font-semibold">Nama Pegawai</th>
-                    <th className="pb-5 font-semibold">Divisi</th>
-                    <th className="pb-5 font-semibold">Jam Masuk</th>
-                    <th className="pb-5 font-semibold">Jam Pulang</th>
-                    <th className="pb-5 font-semibold">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredData.map((item) => (
-                    <tr key={item.id} className="border-b border-gray-800 hover:bg-[#1f2937] transition-colors">
-                      <td className="py-5 font-medium text-blue-400">{item.tanggal}</td>
-                      <td className="py-5 font-bold">{item.nama}</td>
-                      <td className="py-5 text-gray-400 text-sm">{item.divisi}</td>
-                      <td className="py-5">
-                        <div className="flex items-center gap-2 font-medium">
-                          <Clock3 size={16} className="text-gray-500" />
-                          {item.waktu_masuk || "-"}
-                        </div>
-                      </td>
-                      <td className="py-5">
-                        <div className="flex items-center gap-2 font-medium">
-                          <Clock3 size={16} className="text-gray-500" />
-                          {item.waktu_pulang || "-"}
-                        </div>
-                      </td>
-                      <td className="py-5">
-                        <span className={`px-4 py-1.5 rounded-full text-xs font-bold shadow-sm ${
-                          item.status === "Hadir" ? "bg-green-500/10 text-green-400 border border-green-500/20" : 
-                          item.status === "Izin" ? "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20" : 
-                          "bg-red-500/10 text-red-400 border border-red-500/20"
-                        }`}>
-                          {item.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+<table className="w-full min-w-[900px]">
+  <thead>
+    <tr className="border-b border-gray-700 text-left text-gray-400">
+      <th className="pb-5 font-semibold">Tanggal</th>
+      <th className="pb-5 font-semibold">Nama Pegawai</th>
+      <th className="pb-5 font-semibold">Divisi</th>
+      <th className="pb-5 font-semibold">Jam Masuk</th>
+      <th className="pb-5 font-semibold">Jam Pulang</th>
+      {/* Header diganti untuk mencakup Bukti */}
+      <th className="pb-5 font-semibold">Status & Bukti</th> 
+      <th className="pb-5 font-semibold">Lokasi Absen</th>
+    </tr>
+  </thead>
+  <tbody>
+    {filteredData.map((item) => (
+      <tr key={item.id} className="border-b border-gray-800 hover:bg-[#1f2937] transition-colors">
+        <td className="py-5 font-medium text-blue-400">{item.tanggal}</td>
+        <td className="py-5 font-bold text-white">{item.nama}</td>
+        <td className="py-5 text-gray-400 text-sm">{item.divisi}</td>
+        
+        <td className="py-5">
+          <div className="flex items-center gap-2 font-medium text-gray-300">
+            <Clock3 size={16} className="text-gray-500" />
+            {item.waktu_masuk || "-"}
+          </div>
+        </td>
+        
+        <td className="py-5">
+          <div className="flex items-center gap-2 font-medium text-gray-300">
+            <Clock3 size={16} className="text-gray-500" />
+            {item.waktu_pulang || "-"}
+          </div>
+        </td>
+        
+        {/* GABUNGAN: Status dan Bukti Izin */}
+        <td className="py-5">
+          <div className="flex items-center gap-3">
+            {/* Badge Status */}
+            <span className={`px-4 py-1.5 rounded-full text-xs font-bold shadow-sm ${
+              item.status === "Hadir" ? "bg-green-500/10 text-green-400 border border-green-500/20" : 
+              (item.status === "Izin" || item.status === "Sakit") ? "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20" : 
+              "bg-red-500/10 text-red-400 border border-red-500/20"
+            }`}>
+              {item.status}
+            </span>
+
+            {/* Jika ada bukti_url, tampilkan di sampingnya */}
+            {item.bukti_url && (
+              <div className="border-l border-gray-700 pl-3">
+                {item.bukti_url.match(/\.(jpeg|jpg|gif|png)$/i) ? (
+                  <img 
+                    src={item.bukti_url} 
+                    alt="Bukti" 
+                    className="w-10 h-10 object-cover rounded-lg border border-gray-600 hover:scale-125 transition-transform cursor-pointer shadow-md"
+                    onClick={() => window.open(item.bukti_url, "_blank")}
+                    title="Klik untuk memperbesar bukti izin"
+                  />
+                ) : (
+                  <a 
+                    href={item.bukti_url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center p-2.5 bg-blue-500/10 text-blue-400 rounded-lg border border-blue-500/20 hover:bg-blue-500/20 transition-colors"
+                    title="Buka Dokumen Izin"
+                  >
+                    {/* Pastikan Anda sudah import FileText dari lucide-react */}
+                    <FileText size={18} />
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+        </td>
+        
+        {/* Sel Tabel Lokasi & Maps */}
+        <td className="py-5 max-w-[250px]">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs text-gray-300 leading-relaxed line-clamp-2" title={item.lokasi_hadir}>
+              {item.lokasi_hadir || "Lokasi tidak tercatat"}
+            </span>
+            
+            {/* Tombol Peta */}
+            {(item.lat && item.lng) && (
+              <a 
+                href={`https://maps.google.com/?q=${item.lat},${item.lng}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-1.5 w-fit mt-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-all shadow-[0_0_10px_rgb(37,99,235,0.3)]"
+              >
+                <MapPin size={12} /> Lihat di Peta
+              </a>
+            )}
+          </div>
+        </td>
+
+      </tr>
+    ))}
+  </tbody>
+</table>
             )}
           </div>
         </div>
@@ -257,9 +316,11 @@ export default function AbsensiAdmin() {
               {dataAbsensi.slice(0, 5).map((item) => (
                 <div key={item.id} className="bg-white/5 backdrop-blur-md border border-white/10 p-5 rounded-2xl hover:bg-white/10 transition-colors">
                   <div className="flex items-center gap-4">
-                    <div className="w-3 h-3 rounded-full bg-green-400 shadow-[0_0_10px_rgb(74,222,128,0.8)] animate-pulse"></div>
+                    <div className={`w-3 h-3 rounded-full shadow-[0_0_10px_rgb(74,222,128,0.8)] animate-pulse ${
+                      item.status === "Telat" ? "bg-red-400" : item.status === "Izin" ? "bg-yellow-400" : "bg-green-400"
+                    }`}></div>
                     <p className="font-medium text-sm lg:text-base">
-                      <span className="font-bold text-blue-300">{item.nama}</span> melakukan check-in pada <span className="font-bold">{item.waktu_masuk}</span>
+                      <span className="font-bold text-blue-300">{item.nama}</span> melakukan check-in pada <span className="font-bold">{item.waktu_masuk}</span> dengan status <span className="italic">{item.status}</span>
                     </p>
                   </div>
                 </div>

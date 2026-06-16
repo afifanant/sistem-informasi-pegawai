@@ -65,7 +65,6 @@ export default function Login() {
 
     } catch (error) {
       setLoading(false);
-      // PERBAIKAN MUTLAK: Menampilkan error asli langsung dari mesin Supabase
       setErrorMsg("Sistem Database: " + error.message);
     } 
   };
@@ -87,13 +86,25 @@ export default function Login() {
               <Building2 size={40} />
             </div>
 
-            <h1 className="text-6xl font-black leading-tight tracking-tight transform transition-transform duration-700 group-hover:translate-x-2">
-              SIMPEG
+            {/* EYEBROW: SIMPEG DIKECILKAN */}
+            <p className="uppercase tracking-[4px] text-cyan-300 text-sm font-bold mb-3 transform transition-transform duration-700 group-hover:translate-x-1">
+              Sistem Informasi Manajemen Pegawai
+            </p>
+            
+            {/* HEADLINE: NAMA PERUSAHAAN DIBESARKAN */}
+            <h1 className="text-5xl lg:text-6xl font-black leading-tight tracking-tight transform transition-transform duration-700 group-hover:translate-x-2">
+              PT. SA`ADAH DINAR
             </h1>
 
-            <p className="text-blue-100 mt-6 text-lg leading-relaxed opacity-90 transition-opacity duration-700 group-hover:opacity-100">
-              Sistem Informasi Manajemen Pegawai modern untuk monitoring karyawan, absensi, dan aktivitas perusahaan realtime.
-            </p>
+            {/* DESKRIPSI: PROFIL KONTRAKTOR & FUNGSI SISTEM */}
+            <div className="text-blue-100 mt-6 text-lg leading-relaxed opacity-90 transition-opacity duration-700 group-hover:opacity-100 space-y-4">
+              <p>
+                PT. Saadah Dinar merupakan Supplier dan Kontraktor (khususnya perbaikan gerbong dan alat berat kereta api).
+              </p>
+              <p className="text-base text-blue-200">
+                Sistem terpadu ini digunakan untuk memantau absensi, aktivitas, dan divisi pegawai secara realtime.
+              </p>
+            </div>
 
             <div className="mt-10 flex items-center gap-4 bg-white/10 border border-white/10 rounded-2xl p-5 transition-all duration-300 hover:bg-white/20 hover:scale-[1.02]">
               <ShieldCheck className="text-cyan-300 animate-bounce" size={35} style={{ animationDuration: '3s' }} />
@@ -112,7 +123,7 @@ export default function Login() {
             <p className="uppercase tracking-[5px] text-gray-400 text-sm font-medium">Welcome Back</p>
             <h2 className="text-5xl font-black mt-3 text-slate-900 tracking-tight">Login</h2>
             <p className="text-gray-500 mt-4 leading-relaxed">
-              Masuk ke sistem perusahaan menggunakan identitas terdaftar.
+              Masuk ke sistem operasional menggunakan identitas terdaftar.
             </p>
           </div>
 
@@ -121,7 +132,6 @@ export default function Login() {
             {errorMsg && (
               <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg flex items-center gap-3 animate-[pulse_2s_ease-in-out_infinite]">
                 <AlertCircle className="text-red-500 flex-shrink-0" size={20} />
-                {/* Menampilkan pesan error mentah untuk proses investigasi */}
                 <p className="text-red-700 text-sm font-bold break-words w-full">{errorMsg}</p>
               </div>
             )}
@@ -159,12 +169,6 @@ export default function Login() {
             </div>
 
             <div className="flex justify-end mb-6">
-              <Link 
-                to="/forgot-password" 
-                className="text-blue-500 text-sm font-semibold hover:text-blue-700 hover:-translate-x-1 transition-all duration-300 mr-1 inline-block"
-              >
-                Lupa Password?
-              </Link>
             </div>
 
             <button
@@ -184,13 +188,8 @@ export default function Login() {
           </form>
 
           <div className={`mt-8 text-center transition-all duration-700 delay-700 ${isMounted ? "opacity-100" : "opacity-0"}`}>
-            <p className="text-gray-500">Belum punya akun?</p>
-            <Link 
-              to="/register" 
-              className="text-blue-600 font-bold mt-2 inline-block hover:text-blue-800 hover:-translate-y-0.5 transition-all duration-300"
-            >
-              Daftar sekarang
-            </Link>
+      
+    
           </div>
 
         </div>

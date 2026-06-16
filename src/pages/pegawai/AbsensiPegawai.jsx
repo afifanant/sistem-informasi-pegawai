@@ -7,21 +7,85 @@ import {
   CheckCircle2,
   MapPin,
   Timer,
-  Loader2
+  Loader2,
+  AlertCircle,
+  FileText,
+  UploadCloud // <-- Import ikon baru
 } from "lucide-react";
 
 export default function AbsensiPegawai() {
+  // PENGATURAN LOKASI KANTOR (UINSU TUNTUNGAN) & RADIUS
+  const KANTOR_LAT = 3.4965;    
+  const KANTOR_LNG = 98.5936;   
+  const MAKS_RADIUS = 10000;    
+
   // 1. State Penampung Data
   const [riwayat, setRiwayat] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   
+  // State Lokasi
+  const [lokasi, setLokasi] = useState(null);
+  const [jarak, setJarak] = useState(null);
+  const [lokasiLoading, setLokasiLoading] = useState(true);
+
   // State Validasi Tombol
-  const [hasCheckedInToday, setHasCheckedInToday] = useState(false);
-  const [hasCheckedOutToday, setHasCheckedOutToday] = useState(false);
+  const [statusHariIni, setStatusHariIni] = useState(null); 
   const [todayRecordId, setTodayRecordId] = useState(null);
 
-  // 2. Mengambil Data Saat Halaman Dimuat
+  // State Izin (Diperbarui)
+  const [showModalIzin, setShowModalIzin] = useState(false);
+  const [kategoriIzin, setKategoriIzin] = useState("Sakit");
+  const [keteranganIzin, setKeteranganIzin] = useState("");
+  const [fileBukti, setFileBukti] = useState(null);
+
+  // 2. Fungsi Hitung Jarak (Haversine Formula)
+  const hitungJarak = (lat1, lon1, lat2, lon2) => {
+    const R = 6371e3; 
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return Math.round(R * c);
+  };
+
+  // FUNGSI BARU: Mengubah Koordinat menjadi Nama Alamat via OpenStreetMap
+  const dapatkanAlamat = async (lat, lng) => {
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+      const data = await response.json();
+      return data.display_name || "Alamat tidak ditemukan";
+    } catch (error) {
+      console.error("Gagal menarik nama jalan:", error);
+      return "Koordinat: " + lat + ", " + lng;
+    }
+  };
+
+  // 3. Ambil Lokasi Pegawai
+  useEffect(() => {
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setLokasi({ lat: latitude, lng: longitude });
+          const jarakMeter = hitungJarak(KANTOR_LAT, KANTOR_LNG, latitude, longitude);
+          setJarak(jarakMeter);
+          setLokasiLoading(false);
+        },
+        (error) => {
+          console.error("Gagal mendapat lokasi:", error);
+          setLokasiLoading(false);
+        },
+        { enableHighAccuracy: true }
+      );
+    } else {
+      setLokasiLoading(false);
+    }
+  }, []);
+
+  // 4. Mengambil Data Absensi Hari Ini
   const fetchAbsensi = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -34,20 +98,25 @@ export default function AbsensiPegawai() {
         .order('tanggal', { ascending: false });
 
       if (error) throw error;
-      
       setRiwayat(data || []);
 
       const hariIni = new Date().toISOString().split('T')[0]; 
       const absenHariIni = data?.find(item => item.tanggal === hariIni);
 
       if (absenHariIni) {
-        setHasCheckedInToday(true);
         setTodayRecordId(absenHariIni.id);
-        if (absenHariIni.waktu_pulang) {
-          setHasCheckedOutToday(true);
+        if (absenHariIni.status === "Izin") {
+          setStatusHariIni("Izin");
+        } else if (absenHariIni.waktu_pulang) {
+          setStatusHariIni("Pulang");
+        } else if (absenHariIni.status === "Telat") {
+          setStatusHariIni("Telat");
+        } else {
+          setStatusHariIni("Hadir");
         }
+      } else {
+        setStatusHariIni(null);
       }
-
     } catch (error) {
       console.error("Gagal mengambil data absensi:", error);
     } finally {
@@ -55,219 +124,444 @@ export default function AbsensiPegawai() {
     }
   };
 
-  useEffect(() => {
-    fetchAbsensi();
-  }, []);
+  useEffect(() => { fetchAbsensi(); }, []);
 
-  // 3. Fungsi Eksekusi Check In
-  const handleCheckIn = async () => {
+  // 5. Eksekusi Hadir / Telat
+  const handleHadir = async () => {
+    if (jarak > MAKS_RADIUS) {
+      return alert(`Jarak Anda ${(jarak/1000).toFixed(1)} km dari kampus. Anda harus berada di dalam radius 10 km untuk absen Hadir!`);
+    }
+
     setActionLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("User tidak ditemukan");
+      const hariIni = new Date().toISOString().split('T')[0];
+      
+      const sekarang = new Date();
+      const jamSekarang = sekarang.toTimeString().split(' ')[0];
 
-      // FIX LOGIKA WAKTU: Menggunakan standar ISO agar formatnya pasti HH:MM:SS (dengan titik dua)
-      const now = new Date();
-      const hariIni = now.toISOString().split('T')[0];
-      // toTimeString() akan menghasilkan string seperti "07:07:24 GMT+0700...", lalu kita potong di spasi pertama
-      const jamSekarang = now.toTimeString().split(' ')[0]; 
+      // LOGIKA BATAS WAKTU ABSEN: Jam 7 Pagi (07:00:00)
+      const batasAbsen = new Date();
+      batasAbsen.setHours(7, 0, 0, 0);
 
-      const { error } = await supabase
-        .from('absensi')
-        .insert([
-          { 
-            user_id: user.id, 
-            tanggal: hariIni, 
-            waktu_masuk: jamSekarang, 
-            status: "Hadir" 
-          }
-        ]);
+      let statusAbsen = "Hadir";
+      if (sekarang > batasAbsen) {
+        statusAbsen = "Telat";
+      }
+      
+      const detailAlamat = await dapatkanAlamat(lokasi.lat, lokasi.lng);
 
+      const { error } = await supabase.from('absensi').insert([
+        { 
+          user_id: user.id, 
+          tanggal: hariIni, 
+          waktu_masuk: jamSekarang, 
+          status: statusAbsen, 
+          lokasi_hadir: detailAlamat,
+          lat: lokasi.lat, 
+          lng: lokasi.lng 
+        }
+      ]);
       if (error) throw error;
 
-      alert("Berhasil Check In!");
+      if (statusAbsen === "Telat") {
+        alert("Absen tercatat, namun Anda Terlambat (Lewat dari jam 07:00)!");
+      } else {
+        alert("Berhasil Absen Hadir Tepat Waktu!");
+      }
+      
       fetchAbsensi(); 
-
     } catch (error) {
-      alert("Gagal Check In: " + error.message);
+      alert("Gagal absen: " + error.message);
     } finally {
       setActionLoading(false);
     }
   };
 
-  // 4. Fungsi Eksekusi Check Out
-  const handleCheckOut = async () => {
-    if (!todayRecordId) return alert("Anda belum Check In hari ini!");
+  // 6. Eksekusi Pulang
+  const handlePulang = async () => {
+    if (jarak > MAKS_RADIUS) {
+      return alert("Anda harus berada di dalam jangkauan kampus untuk absen Pulang!");
+    }
     
     setActionLoading(true);
     try {
-      // FIX LOGIKA WAKTU: Menggunakan standar ISO agar formatnya pasti HH:MM:SS
       const jamSekarang = new Date().toTimeString().split(' ')[0];
-
-      const { error } = await supabase
-        .from('absensi')
+      const { error } = await supabase.from('absensi')
         .update({ waktu_pulang: jamSekarang })
         .eq('id', todayRecordId);
-
       if (error) throw error;
 
-      alert("Berhasil Check Out!");
+      alert("Berhasil Absen Pulang!");
       fetchAbsensi(); 
-
     } catch (error) {
-      alert("Gagal Check Out: " + error.message);
+      alert("Gagal absen pulang: " + error.message);
     } finally {
       setActionLoading(false);
     }
   };
 
-  if (loading) {
-    return (
-      <DashboardLayout>
-        <div className="flex justify-center items-center h-full min-h-screen text-white">
-          <Loader2 className="animate-spin mr-3" size={30} /> Memuat data absensi...
-        </div>
-      </DashboardLayout>
-    );
-  }
+// 7. Eksekusi Izin (Diperbarui: Menyertakan Lokasi Saat Izin diajukan)
+  const handleIzin = async () => {
+    if (!keteranganIzin) return alert("Alasan izin harus diisi!");
+    
+    // Pastikan lokasi sudah didapatkan sebelum submit izin
+    if (lokasiLoading) return alert("Sedang melacak lokasi Anda, mohon tunggu sebentar...");
+
+    setActionLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const hariIni = new Date().toISOString().split('T')[0];
+
+      let fileUrl = null;
+
+      // Logika Upload Bukti Foto/Dokumen ke Supabase Storage
+      if (fileBukti) {
+        const fileExt = fileBukti.name.split('.').pop();
+        const fileName = `${user.id}_${Date.now()}.${fileExt}`;
+        
+        // Upload file ke bucket 'bukti_izin'
+        const { error: uploadError } = await supabase.storage
+          .from('bukti_izin') 
+          .upload(fileName, fileBukti);
+
+        if (uploadError) {
+          throw new Error("Gagal mengupload bukti file: " + uploadError.message);
+        }
+
+        // Ambil URL public file yang sudah diupload
+        const { data: publicUrlData } = supabase.storage
+          .from('bukti_izin')
+          .getPublicUrl(fileName);
+
+        fileUrl = publicUrlData.publicUrl;
+      }
+
+      // Format keterangan dengan menggabungkan Kategori + Alasan
+      const detailKeterangan = `[${kategoriIzin}] ${keteranganIzin}`;
+
+      // --- TAMBAHAN LOGIKA LOKASI IZIN ---
+      let detailAlamat = "Lokasi tidak terdeteksi";
+      let izinLat = null;
+      let izinLng = null;
+
+      if (lokasi) {
+        detailAlamat = await dapatkanAlamat(lokasi.lat, lokasi.lng);
+        izinLat = lokasi.lat;
+        izinLng = lokasi.lng;
+      }
+      // ------------------------------------
+
+      // Insert ke tabel absensi beserta data lokasi
+      const { error } = await supabase.from('absensi').insert([
+        { 
+          user_id: user.id, 
+          tanggal: hariIni, 
+          status: "Izin", 
+          keterangan: detailKeterangan,
+          bukti_url: fileUrl,
+          lokasi_hadir: detailAlamat, // Menyimpan nama jalan saat izin
+          lat: izinLat,               // Menyimpan latitude saat izin
+          lng: izinLng                // Menyimpan longitude saat izin
+        }
+      ]);
+      
+      if (error) throw error;
+
+      alert("Pengajuan Izin Berhasil!");
+      
+      // Reset Modal & State
+      setShowModalIzin(false);
+      setKeteranganIzin("");
+      setKategoriIzin("Sakit");
+      setFileBukti(null);
+      fetchAbsensi(); 
+
+    } catch (error) {
+      alert("Gagal mengajukan izin: " + error.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  if (loading) return <DashboardLayout><div className="flex justify-center items-center h-full min-h-screen text-white"><Loader2 className="animate-spin mr-3" size={30} /> Memuat data...</div></DashboardLayout>;
 
   return (
     <DashboardLayout>
-      {/* HERO */}
       <div className="bg-gradient-to-r from-blue-700 to-slate-900 rounded-[35px] p-10 text-white">
-        <p className="uppercase tracking-[5px] text-blue-200 text-sm">
-          Attendance Employee
-        </p>
-        <h1 className="text-5xl font-black mt-4">Absensi Saya</h1>
+        <p className="uppercase tracking-[5px] text-blue-200 text-sm">Attendance Employee</p>
+        <h1 className="text-5xl font-black mt-4">Absensi & Lokasi</h1>
         <p className="text-blue-100 mt-5 max-w-2xl leading-relaxed">
-          Kelola absensi dan pantau kehadiran kerja Anda secara realtime yang tersinkronisasi dengan database.
+          Catat kehadiran Anda secara real-time. Jam maksimal masuk adalah pukul 07:00 WIB. Selebihnya sistem akan mencatat Anda terlambat.
         </p>
       </div>
 
-      {/* CARD STATISTIK */}
+      {/* CARD STATISTIK & LOKASI */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
-        <div className="bg-[#111827] rounded-[35px] p-8 text-white">
-          <div className="flex justify-between items-center">
+        <div className="bg-[#111827] rounded-[35px] p-8 text-white border border-gray-800">
+          <div className="flex justify-between items-center mb-4">
             <div>
               <p className="text-gray-400">Total Kehadiran</p>
-              <h2 className="text-5xl font-black mt-4">{riwayat.length}</h2>
-            </div>
-            <div className="bg-green-500 p-4 rounded-2xl">
-              <CheckCircle2 size={28} />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-[#111827] rounded-[35px] p-8 text-white">
-          <div className="flex justify-between items-center">
-            <div>
-              <p className="text-gray-400">Status Hari Ini</p>
-              <h2 className="text-3xl font-black mt-4">
-                {hasCheckedInToday ? (hasCheckedOutToday ? "Selesai" : "Bekerja") : "Belum Absen"}
+              <h2 className="text-5xl font-black mt-2">
+                {riwayat.filter(r => r.status === "Hadir" || r.status === "Telat").length}
               </h2>
             </div>
-            <div className="bg-blue-500 p-4 rounded-2xl">
-              <Clock3 size={28} />
-            </div>
+            <div className="bg-green-500/20 p-4 rounded-2xl text-green-400"><CheckCircle2 size={28} /></div>
           </div>
         </div>
 
-        <div className="bg-[#111827] rounded-[35px] p-8 text-white">
-          <div className="flex justify-between items-center">
+        <div className="bg-[#111827] rounded-[35px] p-8 text-white border border-gray-800">
+          <div className="flex justify-between items-center mb-4">
             <div>
-              <p className="text-gray-400">Lokasi Sistem</p>
-              <h2 className="text-2xl font-black mt-4">Kantor Pusat</h2>
+              <p className="text-gray-400">Status Hari Ini</p>
+              <h2 className="text-3xl font-black mt-2">
+                {statusHariIni === "Hadir" ? "Tepat Waktu" : statusHariIni === "Telat" ? "Terlambat" : statusHariIni === "Pulang" ? "Selesai" : statusHariIni === "Izin" ? "Izin" : "Belum Absen"}
+              </h2>
             </div>
-            <div className="bg-cyan-500 p-4 rounded-2xl">
-              <MapPin size={28} />
-            </div>
+            <div className="bg-blue-500/20 p-4 rounded-2xl text-blue-400"><Clock3 size={28} /></div>
           </div>
+        </div>
+
+        {/* LOKASI CARD MINI */}
+        <div className="bg-[#111827] rounded-[35px] p-8 text-white border border-gray-800 overflow-hidden relative">
+          <div className="flex justify-between items-start relative z-10">
+            <div>
+              <p className="text-gray-400">Jarak ke Kantor</p>
+              {lokasiLoading ? (
+                <p className="text-lg font-bold mt-2 flex items-center text-yellow-500"><Loader2 className="animate-spin mr-2" size={16}/> Melacak...</p>
+              ) : jarak !== null ? (
+                <div>
+                  <h2 className="text-3xl font-black mt-2">
+                    {jarak >= 1000 ? `${(jarak / 1000).toFixed(1)} km` : `${jarak} m`}
+                  </h2>
+                  <p className={`text-sm mt-1 font-bold ${jarak <= MAKS_RADIUS ? 'text-green-400' : 'text-red-400'}`}>
+                    {jarak <= MAKS_RADIUS ? "Dalam Radius (10 km)" : "Di Luar Jangkauan"}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-red-400 mt-2 text-sm font-bold flex items-center"><AlertCircle size={14} className="mr-1"/> Akses Lokasi Ditolak</p>
+              )}
+            </div>
+            <div className="bg-cyan-500/20 p-4 rounded-2xl text-cyan-400"><MapPin size={28} /></div>
+          </div>
+          
+          {lokasi && (
+             <div className="absolute bottom-0 left-0 w-full h-24 opacity-30 pointer-events-none mt-4">
+               <iframe 
+                 width="100%" height="100%" frameBorder="0" scrolling="no"
+                 src={`https://www.openstreetmap.org/export/embed.html?bbox=${lokasi.lng-0.002},${lokasi.lat-0.002},${lokasi.lng+0.002},${lokasi.lat+0.002}&layer=mapnik&marker=${lokasi.lat},${lokasi.lng}`}
+               />
+             </div>
+          )}
         </div>
       </div>
 
       {/* BUTTON ABSENSI */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
-        
-        {/* Tombol Check In */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
         <button 
-          onClick={handleCheckIn}
-          disabled={hasCheckedInToday || actionLoading}
-          className={`rounded-[35px] p-10 text-white transition-all flex flex-col items-center justify-center text-center
-            ${hasCheckedInToday 
-              ? 'bg-gray-700 cursor-not-allowed opacity-50' 
-              : 'bg-green-600 hover:bg-green-700 hover:scale-[1.02] shadow-[0_10px_20px_rgb(22,163,74,0.2)]'
-            }`}
+          onClick={handleHadir}
+          disabled={statusHariIni !== null || actionLoading || lokasiLoading}
+          className={`rounded-[35px] p-8 text-white transition-all flex flex-col items-center justify-center text-center border-2 
+            ${statusHariIni !== null || lokasiLoading
+              ? 'bg-gray-800 border-gray-700 cursor-not-allowed opacity-50' 
+              : jarak <= MAKS_RADIUS 
+                ? 'bg-[#111827] border-green-500 hover:bg-green-600 shadow-[0_0_20px_rgb(34,197,94,0.3)]' 
+                : 'bg-[#111827] border-gray-700 opacity-60 cursor-not-allowed'}`}
         >
-          {actionLoading ? <Loader2 className="animate-spin" size={50} /> : <CalendarCheck size={50} />}
-          <h2 className="text-4xl font-black mt-6">
-            {hasCheckedInToday ? "Sudah Check In" : "Check In"}
-          </h2>
-          <p className="mt-4 text-green-100">
-            {hasCheckedInToday ? "Anda sudah mencatat kehadiran hari ini" : "Catat waktu masuk kerja hari ini"}
-          </p>
+          {actionLoading ? <Loader2 className="animate-spin text-green-500" size={40} /> : <CalendarCheck className={jarak <= MAKS_RADIUS ? "text-green-500" : "text-gray-500"} size={40} />}
+          <h2 className="text-3xl font-black mt-4">Hadir</h2>
         </button>
 
-        {/* Tombol Check Out */}
         <button 
-          onClick={handleCheckOut}
-          disabled={!hasCheckedInToday || hasCheckedOutToday || actionLoading}
-          className={`rounded-[35px] p-10 text-white transition-all flex flex-col items-center justify-center text-center
-            ${(!hasCheckedInToday || hasCheckedOutToday)
-              ? 'bg-gray-700 cursor-not-allowed opacity-50' 
-              : 'bg-red-600 hover:bg-red-700 hover:scale-[1.02] shadow-[0_10px_20px_rgb(220,38,38,0.2)]'
-            }`}
+          onClick={handlePulang}
+          disabled={(statusHariIni !== "Hadir" && statusHariIni !== "Telat") || actionLoading || lokasiLoading}
+          className={`rounded-[35px] p-8 text-white transition-all flex flex-col items-center justify-center text-center border-2
+            ${(statusHariIni !== "Hadir" && statusHariIni !== "Telat") || lokasiLoading
+              ? 'bg-gray-800 border-gray-700 cursor-not-allowed opacity-50' 
+              : jarak <= MAKS_RADIUS
+                ? 'bg-[#111827] border-red-500 hover:bg-red-600 shadow-[0_0_20px_rgb(239,68,68,0.3)]'
+                : 'bg-[#111827] border-gray-700 opacity-60 cursor-not-allowed'}`}
         >
-          {actionLoading ? <Loader2 className="animate-spin" size={50} /> : <Timer size={50} />}
-          <h2 className="text-4xl font-black mt-6">
-            {hasCheckedOutToday ? "Sudah Check Out" : "Check Out"}
-          </h2>
-          <p className="mt-4 text-red-100">
-            {!hasCheckedInToday ? "Harus Check In terlebih dahulu" : hasCheckedOutToday ? "Tugas hari ini selesai" : "Catat waktu pulang kerja hari ini"}
-          </p>
+          {actionLoading ? <Loader2 className="animate-spin text-red-500" size={40} /> : <Timer className={(statusHariIni === "Hadir" || statusHariIni === "Telat") ? "text-red-500" : "text-gray-500"} size={40} />}
+          <h2 className="text-3xl font-black mt-4">Pulang</h2>
+        </button>
+
+        <button 
+          onClick={() => setShowModalIzin(true)}
+          disabled={statusHariIni !== null || actionLoading}
+          className={`rounded-[35px] p-8 text-white transition-all flex flex-col items-center justify-center text-center border-2
+            ${statusHariIni !== null
+              ? 'bg-gray-800 border-gray-700 cursor-not-allowed opacity-50' 
+              : 'bg-[#111827] border-yellow-500 hover:bg-yellow-600 shadow-[0_0_20px_rgb(234,179,8,0.3)]'}`}
+        >
+          <FileText className={statusHariIni === null ? "text-yellow-500" : "text-gray-500"} size={40} />
+          <h2 className="text-3xl font-black mt-4">Izin</h2>
         </button>
       </div>
 
-      {/* RIWAYAT (Dinamis dari Database) */}
-      <div className="bg-[#111827] rounded-[35px] p-8 mt-8 text-white">
-        <div className="mb-8">
-          <p className="uppercase tracking-[4px] text-gray-400 text-sm">Attendance History</p>
-          <h2 className="text-4xl font-black mt-2">Riwayat Absensi</h2>
+      {/* --- BAGIAN BARU: PETA LOKASI INTERAKTIF LIVE --- */}
+      <div className="bg-[#111827] border border-gray-800 rounded-[35px] p-8 mt-8 text-white">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div className="flex items-center gap-3">
+            <MapPin className="text-cyan-400" size={28} />
+            <h2 className="text-3xl font-black">Lokasi Saat Ini</h2>
+          </div>
+          
+          {lokasi && (
+            <a
+              href={`https://www.google.com/maps?q=$${lokasi.lat},${lokasi.lng}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2 transition-all w-fit"
+            >
+              Buka di Google Maps
+            </a>
+          )}
         </div>
 
+        {lokasiLoading ? (
+          <div className="h-72 bg-gray-800 rounded-2xl animate-pulse flex flex-col items-center justify-center text-gray-400">
+            <Loader2 className="animate-spin text-cyan-400 mb-3" size={32}/>
+            Menyesuaikan Koordinat...
+          </div>
+        ) : lokasi ? (
+          <div className="relative w-full h-80 md:h-[400px] rounded-2xl overflow-hidden border border-gray-700 bg-gray-900">
+            <iframe
+              width="100%"
+              height="100%"
+              frameBorder="0"
+              scrolling="no"
+              marginHeight="0"
+              marginWidth="0"
+              src={`https://www.openstreetmap.org/export/embed.html?bbox=${lokasi.lng-0.005},${lokasi.lat-0.005},${lokasi.lng+0.005},${lokasi.lat+0.005}&layer=mapnik&marker=${lokasi.lat},${lokasi.lng}`}
+              className="rounded-2xl"
+            ></iframe>
+          </div>
+        ) : (
+          <div className="h-72 bg-gray-800 rounded-2xl flex flex-col items-center justify-center text-red-400 font-bold border border-red-500/20">
+            <AlertCircle size={40} className="mb-3 opacity-50"/>
+            Akses Lokasi Ditolak atau Tidak Ditemukan.
+            <span className="text-xs text-gray-500 mt-2 font-normal">Pastikan GPS aktif dan Anda mengizinkan akses lokasi pada browser.</span>
+          </div>
+        )}
+      </div>
+
+      {/* RIWAYAT */}
+      <div className="bg-[#111827] border border-gray-800 rounded-[35px] p-8 mt-8 text-white">
+        <h2 className="text-3xl font-black mb-6">Riwayat Absensi</h2>
         <div className="overflow-x-auto">
-          {riwayat.length === 0 ? (
-            <p className="text-gray-400 text-center py-10">Belum ada riwayat absensi.</p>
-          ) : (
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-700 text-left text-gray-400">
-                  <th className="pb-5 font-semibold">Tanggal</th>
-                  <th className="pb-5 font-semibold">Jam Masuk</th>
-                  <th className="pb-5 font-semibold">Jam Pulang</th>
-                  <th className="pb-5 font-semibold">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {riwayat.map((item) => (
-                  <tr key={item.id} className="border-b border-gray-800 hover:bg-[#1f2937] transition-colors">
-                    <td className="py-5 font-medium">{item.tanggal}</td>
-                    <td className="py-5">{item.waktu_masuk || "-"}</td>
-                    <td className="py-5">{item.waktu_pulang || "-"}</td>
-                    <td className="py-5">
-                      <span className={`px-4 py-1.5 rounded-full text-xs font-bold ${
-                        item.status === "Hadir" ? "bg-green-500/20 text-green-400 border border-green-500/20" : 
-                        "bg-yellow-500/20 text-yellow-400 border border-yellow-500/20"
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-gray-700 text-gray-400">
+                <th className="pb-4 min-w-[100px]">Tanggal</th>
+                <th className="pb-4 min-w-[80px]">Hadir</th>
+                <th className="pb-4 min-w-[80px]">Pulang</th>
+                <th className="pb-4 min-w-[120px]">Status</th>
+                <th className="pb-4 min-w-[200px]">Lokasi Absen</th>
+              </tr>
+            </thead>
+            <tbody>
+              {riwayat.map((item) => (
+                <tr key={item.id} className="border-b border-gray-800/50 hover:bg-gray-800/30">
+                  <td className="py-4 font-semibold">{item.tanggal}</td>
+                  <td className="py-4 text-gray-300">{item.waktu_masuk || "-"}</td>
+                  <td className="py-4 text-gray-300">{item.waktu_pulang || "-"}</td>
+                  <td className="py-4">
+                    <div className="flex flex-col gap-1">
+                      <span className={`px-3 py-1 w-fit rounded-lg font-bold text-xs ${
+                        item.status === "Hadir" ? "bg-green-500/20 text-green-400" : 
+                        item.status === "Telat" ? "bg-red-500/20 text-red-400" : 
+                        item.status === "Izin" ? "bg-yellow-500/20 text-yellow-400" :
+                        "bg-gray-500/20 text-gray-400"
                       }`}>
                         {item.status}
                       </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+                      {/* Kalau ada link bukti (opsional), Anda juga bisa menampilkannya di sini nanti */}
+                      {item.keterangan && <span className="text-gray-500 text-xs italic">"{item.keterangan}"</span>}
+                    </div>
+                  </td>
+                  <td className="py-4 text-gray-400 text-xs leading-relaxed max-w-[250px] truncate" title={item.lokasi_hadir || "Tidak ada data"}>
+                    {item.lokasi_hadir ? item.lokasi_hadir : "-"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
+
+      {/* MODAL IZIN DIPERBARUI */}
+      {showModalIzin && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60] p-5">
+          <div className="bg-[#111827] border border-gray-800 w-full max-w-md rounded-[30px] p-8 text-white">
+            <h3 className="text-2xl font-bold mb-2">Form Pengajuan Izin</h3>
+            <p className="text-gray-400 text-sm mb-6">Lengkapi formulir di bawah untuk mengajukan ketidakhadiran.</p>
+            
+            {/* Kategori Izin */}
+            <label className="block text-sm font-semibold mb-2 text-gray-300">Kategori Izin</label>
+            <select 
+              className="w-full bg-[#1f2937] px-4 py-3 rounded-xl outline-none text-white text-sm mb-4 border border-gray-700 focus:border-yellow-500 transition-colors"
+              value={kategoriIzin}
+              onChange={(e) => setKategoriIzin(e.target.value)}
+            >
+              <option value="Sakit">Sakit</option>
+              <option value="Cuti">Cuti</option>
+              <option value="Keperluan Keluarga">Keperluan Keluarga</option>
+              <option value="Dinas Luar">Dinas Luar</option>
+              <option value="Lainnya">Lain-lain</option>
+            </select>
+
+            {/* Alasan / Detail */}
+            <label className="block text-sm font-semibold mb-2 text-gray-300">Penjelasan / Alasan</label>
+            <textarea 
+              className="w-full bg-[#1f2937] px-4 py-3 rounded-xl outline-none text-white text-sm min-h-[100px] mb-4 border border-gray-700 focus:border-yellow-500 transition-colors"
+              placeholder="Contoh: Demam tinggi, perlu istirahat berdasarkan anjuran dokter..."
+              value={keteranganIzin}
+              onChange={(e) => setKeteranganIzin(e.target.value)}
+            />
+
+            {/* Upload Bukti File */}
+            <label className="block text-sm font-semibold mb-2 text-gray-300">Bukti Pendukung (Opsional)</label>
+            <div className="mb-8 relative group">
+              <input 
+                type="file" 
+                accept="image/*,.pdf"
+                onChange={(e) => setFileBukti(e.target.files[0])}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+              />
+              <div className="w-full bg-[#1f2937] border border-gray-700 border-dashed rounded-xl p-5 flex flex-col items-center justify-center text-center group-hover:border-yellow-500 group-hover:bg-[#374151] transition-all">
+                <UploadCloud className={`${fileBukti ? "text-yellow-500" : "text-gray-400"} mb-2`} size={28}/>
+                <p className={`text-sm ${fileBukti ? "text-yellow-400 font-semibold" : "text-gray-300"}`}>
+                  {fileBukti ? fileBukti.name : "Klik atau seret file ke sini"}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">Format: JPG, PNG, atau PDF (Maks 2MB)</p>
+              </div>
+            </div>
+
+            {/* Tombol Aksi */}
+            <div className="flex gap-3">
+              <button 
+                onClick={() => {
+                  setShowModalIzin(false);
+                  setKategoriIzin("Sakit");
+                  setKeteranganIzin("");
+                  setFileBukti(null);
+                }} 
+                className="flex-1 bg-gray-800 hover:bg-gray-700 py-3 rounded-xl font-semibold transition-colors"
+              >
+                Batal
+              </button>
+              <button 
+                onClick={handleIzin} 
+                disabled={actionLoading} 
+                className="flex-1 bg-yellow-600 hover:bg-yellow-500 py-3 rounded-xl font-semibold text-black flex justify-center items-center transition-colors shadow-lg shadow-yellow-600/20"
+              >
+                {actionLoading ? <Loader2 className="animate-spin" size={20} /> : "Kirim Izin"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </DashboardLayout>
   );

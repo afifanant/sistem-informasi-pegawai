@@ -3,8 +3,13 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 // 1. IMPORT KOMPONEN (Pastikan path dan nama file sesuai dengan struktur folder lu)
 import Login from "../pages/auth/Login";
 import DashboardAdmin from "../pages/admin/DashboardAdmin";
-import DashboardPegawai from "../pages/pegawai/DashboardPegawai"; // FIX: Disamakan dengan log git commit lu sebelumnya
 import DashboardPimpinan from "../pages/pimpinan/DashboardPimpinan";
+
+// IMPORT HALAMAN PEGAWAI
+import DashboardPegawai from "../pages/pegawai/DashboardPegawai"; 
+import AbsensiPegawai from "../pages/pegawai/AbsensiPegawai"; // Kolom Absen + Hitung Radius & OpenStreetMap
+import ProjekPegawai from "../pages/pegawai/ProjekPegawai";   // Daftar Projek + Tanggal & Tempat dari Supabase
+
 
 export default function AppRoutes() {
   return (
@@ -17,9 +22,13 @@ export default function AppRoutes() {
         {/* DASHBOARD ADMIN */}
         <Route path="/admin" element={<DashboardAdmin />} />
 
-        {/* DASHBOARD PEGAWAI */}
-        {/* FIX: Path diubah ke "/dashboard-pegawai" agar sinkron dengan fungsi navigate() di Login.jsx */}
-        {/* FIX: Element disesuaikan dengan nama komponen yang di-import di atas */}
+        {/* DASHBOARD PEGAWAI (Grup rute sesuai dengan path di SidebarPegawai) */}
+        <Route path="/pegawai" element={<DashboardPegawai />} />
+        <Route path="/pegawai/absensi" element={<AbsensiPegawai />} />
+        <Route path="/pegawai/projek" element={<ProjekPegawai />} />
+        
+                
+        {/* FIX CADANGAN: Tetap mempertahankan path ini jika file Login.jsx lu masih mengarah ke /dashboard-pegawai */}
         <Route path="/dashboard-pegawai" element={<DashboardPegawai />} />
 
         {/* DASHBOARD PIMPINAN */}

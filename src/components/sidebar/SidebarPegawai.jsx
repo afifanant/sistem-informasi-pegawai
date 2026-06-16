@@ -4,9 +4,10 @@ import {
   Briefcase,
   User,
   LogOut,
+  ListTodo, // <-- Import ikon baru untuk Tugas Saya
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { supabase } from "../../supabaseClient"; // Sesuaikan jika path file jembatan lu berbeda
+import { supabase } from "../../supabaseClient"; 
 
 export default function SidebarPegawai() {
   const location = useLocation();
@@ -23,7 +24,18 @@ export default function SidebarPegawai() {
       path: "/pegawai/absensi",
       icon: <ClipboardCheck size={22} />,
     },
-  
+    {
+      title: "Projek",
+      path: "/pegawai/projek", 
+      icon: <Briefcase size={22} />,
+    },
+    // --- MENU BARU: TUGAS SAYA ---
+    {
+      title: "Tugas Saya",
+      path: "/pegawai/tugas", // Path mengarah ke halaman tugas
+      icon: <ListTodo size={22} />,
+    },
+    // -----------------------------
     {
       title: "Profile Saya",
       path: "/pegawai/profile",
