@@ -6,6 +6,7 @@ import {
   FileText,
   Settings,
   LogOut,
+  HardHat // Penambahan ikon konstruksi/proyek lapangan yang relevan
 } from "lucide-react";
 
 import { useNavigate, Link, useLocation } from "react-router-dom";
@@ -39,6 +40,11 @@ export default function SidebarAdmin() {
       title: "Divisi",
       path: "/admin/divisi",
       icon: <Building2 size={22} />,
+    },
+    {
+      title: "Proyek", // Menu baru untuk manajemen penugasan proyek lapangan
+      path: "/admin/proyek",
+      icon: <HardHat size={22} />,
     },
     {
       title: "Laporan",
@@ -97,7 +103,6 @@ export default function SidebarAdmin() {
 
       {/* PROFILE */}
       <div className="bg-white/5 border border-white/10 rounded-[30px] p-5">
-        {/* Layout disesuaikan agar rapi tanpa foto profil */}
         <div className="text-center mb-2">
           <h3 className="font-bold text-lg">
             Administrator

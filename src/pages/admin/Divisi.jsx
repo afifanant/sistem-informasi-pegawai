@@ -24,16 +24,25 @@ export default function Divisi() {
 
   const [dataDivisi, setDataDivisi] = useState([]);
   const [dataPegawai, setDataPegawai] = useState([]);
+  const [masterProyek, setMasterProyek] = useState([]);
 
   const fetchDivisiData = async () => {
     try {
       setLoading(true);
-      const { data: divisi } = await supabase.from('divisi').select('*').order('created_at', { ascending: true });
-      const { data: profiles } = await supabase.from('profiles').select('id, full_name, email, position, nama_proyek, proyek_lokasi, tanggal_mulai, tanggal_selesai');
+      const { data: divisi, error: errorDivisi } = await supabase.from('divisi').select('*').order('created_at', { ascending: true });
+      if (errorDivisi) throw errorDivisi;
+
+      const { data: profiles, error: errorProfiles } = await supabase.from('profiles').select('id, full_name, username, position, nama_proyek, proyek_lokasi, tanggal_mulai, tanggal_selesai');
+      if (errorProfiles) throw errorProfiles;
+
+      const { data: proyek, error: errorProyek } = await supabase.from('proyek').select('nama_proyek, lokasi');
+      if (errorProyek) throw errorProyek;
+
       setDataDivisi(divisi || []);
       setDataPegawai(profiles || []);
+      setMasterProyek(proyek || []);
     } catch (error) { 
-      console.error(error); 
+      console.error("Detail Error Muat Divisi/Profiles/Proyek:", error.message);
     } finally { 
       setLoading(false); 
     }
@@ -44,11 +53,18 @@ export default function Divisi() {
     fetchDivisiData(); 
   }, []);
 
-  // FUNGSI MANAJEMEN PENUGASAN (EDIT & HAPUS) DENGAN VALIDASI KETAT
+  const handleProyekChange = (namaProyekTerpilih) => {
+    const proyekCocok = masterProyek.find(p => p.nama_proyek === namaProyekTerpilih);
+    setEditPenugasan({
+      ...editPenugasan,
+      nama_proyek: namaProyekTerpilih,
+      proyek_lokasi: proyekCocok ? proyekCocok.lokasi : ""
+    });
+  };
+
   const handleSimpanPenugasan = async () => {
     setActionLoading(true);
     try {
-      // WAJIB pakai .select() agar Supabase mengembalikan data yang berhasil diubah
       const { data, error } = await supabase.from('profiles').update({
         nama_proyek: editPenugasan.nama_proyek,
         proyek_lokasi: editPenugasan.proyek_lokasi,
@@ -58,9 +74,8 @@ export default function Divisi() {
 
       if (error) throw error;
       
-      // Jika data kosong, berarti update gagal karena RLS Supabase
       if (!data || data.length === 0) {
-        throw new Error("⛔ Update diblokir Supabase! Lu belum jalanin script SQL buat buka RLS profiles.");
+        throw new Error("⛔ Update diblokir Supabase! RLS profiles belum dikonfigurasi.");
       }
 
       alert("Penugasan berhasil diperbarui di database!");
@@ -85,7 +100,6 @@ export default function Divisi() {
 
       if (error) throw error;
       
-      // Validasi RLS saat menghapus
       if (!data || data.length === 0) {
         throw new Error("⛔ Hapus diblokir Supabase! RLS belum dibuka.");
       }
@@ -96,7 +110,6 @@ export default function Divisi() {
     }
   };
 
-  // FUNGSI CRUD DIVISI (Tambah/Hapus)
   const handleTambahDivisi = async () => {
     if (!form.nama || !form.manager) return alert("Isi semua field!");
     setActionLoading(true);
@@ -115,12 +128,17 @@ export default function Divisi() {
 
   const handleHapusDivisi = async (id, nama) => {
     if (window.confirm(`Hapus ${nama}? Pegawai di divisi ini tidak terhapus, namun status divisi mereka akan kosong.`)) {
-        await supabase.from('divisi').delete().eq('id', id);
+      try {
+        const { error } = await supabase.from('divisi').delete().eq('id', id);
+        if (error) throw error;
         fetchDivisiData();
+      } catch (error) {
+        alert("Gagal menghapus divisi: " + error.message);
+      }
     }
   };
 
-  const filteredDivisi = dataDivisi.filter(item => item.nama.toLowerCase().includes(search.toLowerCase()));
+  const filteredDivisi = dataDivisi.filter(item => (item.nama || "").toLowerCase().includes(search.toLowerCase()));
 
   if (loading) {
     return (
@@ -138,7 +156,7 @@ export default function Divisi() {
       <div className={`transform transition-all duration-1000 ${isMounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"}`}>
         
         {/* HEADER */}
-        <div className="relative bg-gradient-to-r from-blue-900 via-slate-800 to-slate-900 rounded-[35px] p-10 text-white shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-6 overflow-hidden">
+        <div className="relative bg-gradient-to-r from-blue-900 via-slate-800 to-slate-900 rounded-[35px] p-10 text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6 overflow-hidden">
           <div className="absolute top-[-50px] right-[-50px] w-48 h-48 bg-blue-500/20 rounded-full blur-3xl animate-pulse"></div>
           
           <div className="relative z-10 flex items-center gap-5">
@@ -153,7 +171,7 @@ export default function Divisi() {
           
           <button 
             onClick={() => setShowModal(true)}
-            className="relative z-10 bg-blue-600 hover:bg-blue-500 active:scale-95 px-6 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all h-fit shadow-lg shadow-blue-600/30 border border-blue-400/50"
+            className="relative z-10 bg-blue-600 hover:bg-blue-500 active:scale-95 px-6 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all h-fit shadow-lg border border-blue-400/50"
           >
             <Plus size={22} /> Tambah Divisi
           </button>
@@ -191,8 +209,6 @@ export default function Divisi() {
             const anggota = dataPegawai.filter(p => p.position === item.nama);
             return (
               <div key={item.id} className="bg-[#111827] border border-gray-800 rounded-[30px] flex flex-col justify-between shadow-xl hover:shadow-blue-900/20 hover:-translate-y-1 hover:border-blue-500/50 transition-all duration-300 relative overflow-hidden group">
-                
-                {/* Garis Warna Header Kartu */}
                 <div className={`h-2 w-full bg-gradient-to-r ${item.warna || 'from-blue-500 to-cyan-400'}`}></div>
                 
                 <div className="p-7">
@@ -214,12 +230,12 @@ export default function Divisi() {
                   </div>
                 </div>
 
-                <div className="px-7 pb-7 flex gap-3 mt-2">
-                  <button onClick={() => { setSelectedDivisi(item); setShowDetailModal(true); }} className="flex-1 bg-[#1f2937] hover:bg-blue-600 border border-gray-700 hover:border-transparent py-3 rounded-xl font-bold text-gray-300 hover:text-white transition-all text-sm flex justify-center items-center gap-2">
+                <div className="grid grid-cols-2 gap-3 p-7 pt-0 mt-2">
+                  <button onClick={() => { setSelectedDivisi(item); setShowDetailModal(true); }} className="bg-[#1f2937] hover:bg-blue-600 border border-gray-700 hover:border-transparent py-3 rounded-xl font-bold text-gray-300 hover:text-white transition-all text-sm flex justify-center items-center gap-2">
                     <Contact size={18} /> Detail Staf
                   </button>
-                  <button onClick={() => handleHapusDivisi(item.id, item.nama)} className="bg-[#1f2937] hover:bg-red-600 border border-gray-700 hover:border-transparent text-gray-400 hover:text-white px-5 rounded-xl transition-all flex justify-center items-center">
-                    <Trash2 size={18}/>
+                  <button onClick={() => handleHapusDivisi(item.id, item.nama)} className="bg-[#1f2937] hover:bg-red-600 border border-gray-700 hover:border-transparent text-gray-400 hover:text-white py-3 rounded-xl transition-all flex justify-center items-center gap-2 font-bold text-sm">
+                    <Trash2 size={18}/> Hapus
                   </button>
                 </div>
               </div>
@@ -286,7 +302,6 @@ export default function Divisi() {
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-5 overflow-y-auto py-10">
           <div className="bg-[#111827] w-full max-w-6xl rounded-[35px] text-white border border-gray-700 shadow-2xl flex flex-col my-auto max-h-[90vh]">
             
-            {/* Header Modal Detail */}
             <div className="p-8 border-b border-gray-800 flex justify-between items-center shrink-0 bg-[#1f2937]/30 rounded-t-[35px]">
               <div className="flex items-center gap-4">
                 <div className="bg-blue-600 p-3 rounded-2xl shadow-lg shadow-blue-600/20">
@@ -302,7 +317,6 @@ export default function Divisi() {
               </button>
             </div>
 
-            {/* Isi Tabel */}
             <div className="overflow-x-auto overflow-y-auto flex-1 p-8 rounded-b-[35px] custom-scrollbar">
               <table className="w-full text-left border-collapse">
                 <thead className="sticky top-0 bg-[#111827] z-10 shadow-sm">
@@ -327,7 +341,7 @@ export default function Divisi() {
                       <tr key={pegawai.id} className="hover:bg-gray-800/30 transition-colors">
                         <td className="py-5">
                           <p className="font-bold text-white text-base">{pegawai.full_name}</p>
-                          <p className="text-gray-500 text-xs mt-0.5">{pegawai.email}</p>
+                          <p className="text-gray-500 text-xs mt-0.5">ID: <span className="text-cyan-400 font-mono">{pegawai.username || "-"}</span></p>
                         </td>
                         
                         <td className="py-5">
@@ -408,15 +422,25 @@ export default function Divisi() {
             <div className="space-y-4">
               <div>
                 <label className="text-xs font-semibold text-gray-400 block mb-2">Nama Target Proyek</label>
-                <input type="text" className="w-full bg-[#111827] px-4 py-3 rounded-xl outline-none text-sm text-white border border-gray-700 focus:border-blue-500 transition-colors"
-                  value={editPenugasan.nama_proyek} onChange={(e) => setEditPenugasan({...editPenugasan, nama_proyek: e.target.value})} placeholder="Cth: Pembangunan Rel Binjai" />
+                <select 
+                  className="w-full bg-[#111827] px-4 py-3 rounded-xl outline-none text-sm text-white border border-gray-700 focus:border-blue-500 transition-colors cursor-pointer"
+                  value={editPenugasan.nama_proyek} 
+                  onChange={(e) => handleProyekChange(e.target.value)}
+                >
+                  <option value="" className="text-gray-500">-- Pilih Proyek Terdaftar --</option>
+                  {masterProyek.map((proyek) => (
+                    <option key={proyek.nama_proyek} value={proyek.nama_proyek}>
+                      {proyek.nama_proyek}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="text-xs font-semibold text-gray-400 block mb-2">Lokasi Penugasan</label>
                 <div className="relative">
                   <MapPin size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
-                  <input type="text" className="w-full bg-[#111827] pl-10 pr-4 py-3 rounded-xl outline-none text-sm text-white border border-gray-700 focus:border-blue-500 transition-colors"
-                    value={editPenugasan.proyek_lokasi} onChange={(e) => setEditPenugasan({...editPenugasan, proyek_lokasi: e.target.value})} placeholder="Cth: Medan" />
+                  <input type="text" className="w-full bg-[#111827] pl-10 pr-4 py-3 rounded-xl outline-none text-sm text-gray-400 border border-gray-700 opacity-60 cursor-not-allowed"
+                    value={editPenugasan.proyek_lokasi} placeholder="Pilih proyek terlebih dahulu" readOnly />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">

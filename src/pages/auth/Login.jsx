@@ -1,31 +1,26 @@
 import { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom"; 
+import { useNavigate } from "react-router-dom"; 
 import { Building2, ShieldCheck, AlertCircle, Loader2 } from "lucide-react";
 import { supabase } from "../../supabaseClient";
 
 export default function Login() {
   const navigate = useNavigate();
 
-  // 1. State Animasi Halaman
   const [isMounted, setIsMounted] = useState(false);
-
-  // 2. Inisialisasi State
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState(""); // Dikembalikan ke nama state yang spesifik
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
-  // Trigger Animasi saat komponen pertama kali di-render
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
-  // 3. Fungsi Utama Login dengan Logika RBAC (Role-Based Access Control)
   const handleLogin = async (e) => {
     e.preventDefault();
     
-    if (!email || !password) {
-      setErrorMsg("Email dan password wajib diisi.");
+    if (!username || !password) {
+      setErrorMsg("Username dan password wajib diisi.");
       return;
     }
 
@@ -33,27 +28,43 @@ export default function Login() {
     setErrorMsg("");
 
     try {
-      // A. Buka Pintu (Autentikasi Email & Password)
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: email,
+      const targetUsername = username.trim().toLowerCase();
+      
+      // LOGIKA KUNCI: Otomatis bungkus username menjadi format email internal perusahaan
+      const targetEmail = `${targetUsername}@saadahdinar.internal`; 
+
+      // LANGKAH 1: Ambil data profile murni berdasarkan username untuk memvalidasi ROLE
+      const { data: userProfile, error: userError } = await supabase
+        .from('profiles')
+        .select('id, role, username')
+        .eq('username', targetUsername)
+        .maybeSingle();
+
+      if (userError) {
+        console.error("Gagal SELECT profiles:", userError.message);
+        throw new Error("Gagal querying schema database: " + userError.message);
+      }
+
+      if (!userProfile) {
+        throw new Error("Username tidak terdaftar dalam sistem perusahaan.");
+      }
+
+      // LANGKAH 2: Eksekusi Sign-In murni ke Supabase Auth Core menggunakan email manipulasi internal
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: targetEmail,
         password: password,
       });
 
-      if (authError) throw authError;
-
-      // B. Cek KTP / Role di tabel profiles
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', authData.user.id)
-        .single();
-
-      if (profileError && profileError.code !== 'PGRST116') {
-        throw profileError; 
+      if (authError) {
+        console.error("Gagal Authenticate Supabase Auth:", authError.message);
+        if (authError.message === "Invalid login credentials") {
+          throw new Error("Username tidak ditemukan atau password salah.");
+        }
+        throw authError;
       }
 
-      // C. Routing Cerdas berdasarkan Role
-      const userRole = profile?.role || 'pegawai'; 
+      // LANGKAH 3: Routing Dinamis Akurat Berdasarkan Role
+      const userRole = userProfile.role || 'pegawai'; 
 
       if (userRole === 'admin') {
         navigate("/admin"); 
@@ -65,7 +76,7 @@ export default function Login() {
 
     } catch (error) {
       setLoading(false);
-      setErrorMsg("Sistem Database: " + error.message);
+      setErrorMsg(error.message);
     } 
   };
 
@@ -74,123 +85,95 @@ export default function Login() {
       isMounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-12"
     }`}>
       
-      <div className="w-full max-w-5xl grid lg:grid-cols-2 bg-white/10 backdrop-blur-xl rounded-[40px] overflow-hidden border border-white/10 shadow-2xl transition-all duration-500 hover:shadow-blue-500/20">
+      <div className="w-full max-w-5xl grid lg:grid-cols-2 bg-white/10 backdrop-blur-xl rounded-[40px] overflow-hidden border border-white/10 shadow-2xl">
         
-        {/* LEFT (HERO) */}
+        {/* LEFT PANEL (HERO) */}
         <div className="hidden lg:flex flex-col justify-center p-14 text-white relative overflow-hidden group">
-          <div className="absolute w-72 h-72 bg-blue-500/30 rounded-full blur-3xl top-0 -left-10 animate-pulse duration-[4000ms]"></div>
-          <div className="absolute w-72 h-72 bg-cyan-400/20 rounded-full blur-3xl bottom-0 right-0 animate-pulse duration-[6000ms]"></div>
-
+          <div className="absolute w-72 h-72 bg-blue-500/30 rounded-full blur-3xl top-0 -left-10 animate-pulse"></div>
           <div className="relative z-10">
-            <div className="w-20 h-20 rounded-3xl bg-blue-500 flex items-center justify-center shadow-lg mb-8 transform transition-transform duration-700 group-hover:scale-110 group-hover:rotate-6">
+            <div className="w-20 h-20 rounded-3xl bg-blue-500 flex items-center justify-center shadow-lg mb-8">
               <Building2 size={40} />
             </div>
-
-            {/* EYEBROW: SIMPEG DIKECILKAN */}
-            <p className="uppercase tracking-[4px] text-cyan-300 text-sm font-bold mb-3 transform transition-transform duration-700 group-hover:translate-x-1">
+            <p className="uppercase tracking-[4px] text-cyan-300 text-sm font-bold mb-3">
               Sistem Informasi Manajemen Pegawai
             </p>
-            
-            {/* HEADLINE: NAMA PERUSAHAAN DIBESARKAN */}
-            <h1 className="text-5xl lg:text-6xl font-black leading-tight tracking-tight transform transition-transform duration-700 group-hover:translate-x-2">
-              PT. SA`ADAH DINAR
+            <h1 className="text-5xl lg:text-6xl font-black leading-tight tracking-tight">
+              PT. SA'ADAH DINAR
             </h1>
-
-            {/* DESKRIPSI: PROFIL KONTRAKTOR & FUNGSI SISTEM */}
-            <div className="text-blue-100 mt-6 text-lg leading-relaxed opacity-90 transition-opacity duration-700 group-hover:opacity-100 space-y-4">
-              <p>
-                PT. Saadah Dinar merupakan Supplier dan Kontraktor (khususnya perbaikan gerbong dan alat berat kereta api).
-              </p>
-              <p className="text-base text-blue-200">
-                Sistem terpadu ini digunakan untuk memantau absensi, aktivitas, dan divisi pegawai secara realtime.
-              </p>
-            </div>
-
-            <div className="mt-10 flex items-center gap-4 bg-white/10 border border-white/10 rounded-2xl p-5 transition-all duration-300 hover:bg-white/20 hover:scale-[1.02]">
-              <ShieldCheck className="text-cyan-300 animate-bounce" size={35} style={{ animationDuration: '3s' }} />
+            <div className="mt-10 flex items-center gap-4 bg-white/10 border border-white/10 rounded-2xl p-5">
+              <ShieldCheck className="text-cyan-300" size={35} />
               <div>
-                <h3 className="font-bold text-lg">Secure Company System</h3>
-                <p className="text-blue-100 text-sm">Akses ruangan disesuaikan dengan pangkat dan divisi.</p>
+                <h3 className="font-bold text-lg">Secure Access Control</h3>
+                <p className="text-blue-100 text-sm">Masuk menggunakan ID Username Karyawan yang telah divalidasi HRD.</p>
               </div>
             </div>
           </div>
         </div>
 
-        {/* RIGHT (FORM - VERSI TERANG) */}
+        {/* RIGHT PANEL (FORM) */}
         <div className="bg-white p-10 lg:p-14 flex flex-col justify-center">
-          
-          <div className={`transition-all duration-700 delay-300 ${isMounted ? "opacity-100 translate-x-0" : "opacity-0 translate-x-10"}`}>
-            <p className="uppercase tracking-[5px] text-gray-400 text-sm font-medium">Welcome Back</p>
-            <h2 className="text-5xl font-black mt-3 text-slate-900 tracking-tight">Login</h2>
-            <p className="text-gray-500 mt-4 leading-relaxed">
-              Masuk ke sistem operasional menggunakan identitas terdaftar.
-            </p>
+          <div>
+            <p className="uppercase tracking-[5px] text-gray-400 text-sm font-medium">Portal Log In</p>
+            <h2 className="text-5xl font-black mt-3 text-slate-900 tracking-tight">Sign In</h2>
           </div>
 
-          <form onSubmit={handleLogin} className={`mt-8 space-y-6 transition-all duration-700 delay-500 ${isMounted ? "opacity-100" : "opacity-0"}`}>
+          <form onSubmit={handleLogin} className="mt-8 space-y-6">
             
             {errorMsg && (
-              <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg flex items-center gap-3 animate-[pulse_2s_ease-in-out_infinite]">
+              <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg flex items-center gap-3">
                 <AlertCircle className="text-red-500 flex-shrink-0" size={20} />
                 <p className="text-red-700 text-sm font-bold break-words w-full">{errorMsg}</p>
               </div>
             )}
 
-            <div className="group">
-              <label className="text-sm font-semibold text-gray-600 transition-colors group-focus-within:text-blue-600">
-                Email
+            <div>
+              <label className="text-sm font-semibold text-gray-600">
+                Username Karyawan
               </label>
-              <div className="mt-2 transition-transform duration-300 ease-out group-focus-within:-translate-y-1">
+              <div className="mt-2">
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Masukkan email"
-                  className="w-full bg-gray-100 border border-gray-200 text-slate-900 rounded-2xl px-5 py-4 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all duration-300 disabled:opacity-50 shadow-sm group-focus-within:shadow-[0_8px_30px_rgb(59,130,246,0.15)]"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Masukkan nama username (Cth: afif)"
+                  className="w-full bg-gray-100 border border-gray-200 text-slate-900 rounded-2xl px-5 py-4 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all duration-300 shadow-sm"
                   disabled={loading}
+                  autoComplete="off"
                 />
               </div>
             </div>
 
-            <div className="group">
-              <label className="text-sm font-semibold text-gray-600 transition-colors group-focus-within:text-blue-600">
-                Password
+            <div>
+              <label className="text-sm font-semibold text-gray-600">
+                Password Akses
               </label>
-              <div className="mt-2 transition-transform duration-300 ease-out group-focus-within:-translate-y-1">
+              <div className="mt-2">
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Masukkan password"
-                  className="w-full bg-gray-100 border border-gray-200 text-slate-900 rounded-2xl px-5 py-4 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all duration-300 disabled:opacity-50 shadow-sm group-focus-within:shadow-[0_8px_30px_rgb(59,130,246,0.15)]"
+                  className="w-full bg-gray-100 border border-gray-200 text-slate-900 rounded-2xl px-5 py-4 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 transition-all duration-300 shadow-sm"
                   disabled={loading}
                 />
               </div>
             </div>
 
-            <div className="flex justify-end mb-6">
-            </div>
-
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white py-5 rounded-2xl font-bold transition-all duration-300 shadow-[0_10px_20px_rgb(37,99,235,0.2)] hover:shadow-[0_15px_30px_rgb(37,99,235,0.4)] hover:-translate-y-1 disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none mt-4"
+              className="w-full flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white py-5 rounded-2xl font-bold transition-all duration-300 shadow-lg disabled:opacity-70 disabled:cursor-not-allowed mt-4"
             >
               {loading ? (
                 <>
                   <Loader2 className="animate-spin mr-2" size={20} />
-                  Memverifikasi Akses...
+                  Memverifikasi Akun Personel...
                 </>
               ) : (
                 "Masuk ke Sistem"
               )}
             </button>
           </form>
-
-          <div className={`mt-8 text-center transition-all duration-700 delay-700 ${isMounted ? "opacity-100" : "opacity-0"}`}>
-      
-    
-          </div>
 
         </div>
       </div>
