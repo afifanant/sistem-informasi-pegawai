@@ -18,19 +18,15 @@ export default function Laporan() {
       return;
     }
     
-    // Ambil header dari keys objek pertama
     const headers = Object.keys(data[0]).join(",");
     
-    // Format baris data
     const rows = data.map(row => 
       Object.values(row).map(value => {
         let safeValue = value === null || value === undefined ? "" : value;
-        // Tangani jika ada data berupa objek/array agar tidak menjadi [object Object]
         if (typeof safeValue === 'object') {
           safeValue = JSON.stringify(safeValue);
         }
         if (typeof safeValue === 'string') {
-          // Escape tanda kutip ganda untuk CSV
           safeValue = safeValue.replace(/"/g, '""');
         }
         return `"${safeValue}"`;
@@ -67,7 +63,6 @@ export default function Laporan() {
         });
       }
 
-      // Gunakan block scope {} untuk setiap case agar deklarasi variabel aman
       switch (tipe) {
         case "Laporan Data Pegawai": {
           resultData = profilesData;
@@ -91,18 +86,44 @@ export default function Laporan() {
           break;
         }
 
+        // PENAMBAHAN: Case untuk Hasil Kerja
+        case "Laporan Hasil Kerja": {
+          const { data: hasilData, error: errHasil } = await supabase
+            .from("laporan_proyek")
+            .select("*")
+            .order("created_at", { ascending: false });
+            
+          if (errHasil) throw errHasil;
+          
+          // Pre-format agar CSV tidak berisi raw timestamp
+          resultData = hasilData.map(item => ({
+            ID_Laporan: item.id,
+            user_id: item.user_id, // Disimpan sementara untuk mapping nama di bawah
+            Tanggal_Upload: new Date(item.created_at).toLocaleString('id-ID'),
+            Nama_Proyek: item.nama_proyek,
+            Link_Dokumen: item.file_url
+          }));
+          
+          filename = "Laporan_Hasil_Kerja";
+          break;
+        }
+
         default:
           throw new Error("Tipe laporan tidak dikenali");
       }
 
-      // Format data untuk menyisipkan Nama Pegawai jika diperlukan
+      // Format final untuk menyisipkan Nama Pegawai & membuang user_id agar Excel bersih
       if (tipe === "Laporan Data Pegawai" || tipe === "Laporan Divisi") {
         formattedData = resultData; 
       } else {
-        formattedData = resultData.map(row => ({
-          Nama_Pegawai: profileMap[row.user_id] || "Sistem / Akun Dihapus",
-          ...row
-        }));
+        formattedData = resultData.map(row => {
+          // Destructure untuk membuang user_id dari hasil akhir CSV
+          const { user_id, ...rest } = row; 
+          return {
+            Nama_Pegawai: profileMap[user_id] || "Sistem / Akun Dihapus",
+            ...rest
+          };
+        });
       }
       
       downloadCSV(formattedData, filename);
@@ -115,10 +136,12 @@ export default function Laporan() {
     }
   };
 
+  // PENAMBAHAN: Opsi laporan baru
   const daftarLaporan = [
     "Laporan Data Pegawai",
     "Laporan Kehadiran Pegawai",
     "Laporan Divisi",
+    "Laporan Hasil Kerja",
   ];
 
   return (
@@ -127,7 +150,6 @@ export default function Laporan() {
         
         {/* HERO SECTION */}
         <div className="bg-gradient-to-r from-blue-700 to-slate-900 rounded-[35px] p-10 text-white shadow-xl relative overflow-hidden">
-          {/* Efek dekorasi cahaya */}
           <div className="absolute top-0 right-0 w-40 h-40 bg-blue-500 rounded-full blur-[100px] opacity-30"></div>
           
           <p className="uppercase tracking-[5px] text-blue-200 text-sm font-semibold">
@@ -142,15 +164,19 @@ export default function Laporan() {
         </div>
 
         {/* DAFTAR KARTU LAPORAN */}
-        {/* Diubah menjadi grid-cols-3 pada layar XL agar 3 item sejajar sempurna */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+        {/* PERBAIKAN: Diubah menjadi xl:grid-cols-4 agar pas untuk 4 kartu */}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
           {daftarLaporan.map((item, index) => (
             <div
               key={index}
               className="bg-white rounded-[35px] p-8 shadow-sm border border-slate-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 flex flex-col justify-between"
             >
               <div>
-                <div className="bg-blue-50 text-blue-600 w-16 h-16 rounded-2xl flex items-center justify-center mb-6 shadow-inner border border-blue-100">
+                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 shadow-inner border ${
+                  item === "Laporan Hasil Kerja" 
+                    ? "bg-amber-50 text-amber-600 border-amber-100" // Warna khusus untuk hasil kerja
+                    : "bg-blue-50 text-blue-600 border-blue-100"
+                }`}>
                   <FileText size={30} />
                 </div>
 

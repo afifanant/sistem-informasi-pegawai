@@ -9,34 +9,36 @@ import {
   Briefcase,
   Loader2,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  FolderOpen // Tambahan icon baru
 } from "lucide-react";
 
 export default function Laporan() {
-  // 1. State Animasi & Notifikasi
   const [isMounted, setIsMounted] = useState(false);
   const [message, setMessage] = useState({ type: "", text: "" });
 
-  // 2. State Statistik & Loading
-  const [stats, setStats] = useState({ pegawai: 0, absensi: 0, divisi: 0 });
-  const [isDownloading, setIsDownloading] = useState(null); // Menyimpan ID laporan yang sedang didownload
+  // Ditambah: stat untuk hasil kerja
+  const [stats, setStats] = useState({ pegawai: 0, absensi: 0, divisi: 0, hasilKerja: 0 });
+  const [isDownloading, setIsDownloading] = useState(null); 
 
-  // 3. Mengambil Statistik Ketersediaan Data Saat Halaman Dimuat
   useEffect(() => {
     setIsMounted(true);
 
     const fetchStats = async () => {
       try {
-        const [resPegawai, resAbsensi, resDivisi] = await Promise.all([
+        // Ditambah: query fetch ke laporan_proyek
+        const [resPegawai, resAbsensi, resDivisi, resHasilKerja] = await Promise.all([
           supabase.from('profiles').select('id', { count: 'exact', head: true }),
           supabase.from('absensi').select('id', { count: 'exact', head: true }),
-          supabase.from('divisi').select('id', { count: 'exact', head: true })
+          supabase.from('divisi').select('id', { count: 'exact', head: true }),
+          supabase.from('laporan_proyek').select('id', { count: 'exact', head: true })
         ]);
 
         setStats({
           pegawai: resPegawai.count || 0,
           absensi: resAbsensi.count || 0,
           divisi: resDivisi.count || 0,
+          hasilKerja: resHasilKerja.count || 0,
         });
       } catch (error) {
         console.error("Gagal memuat statistik:", error);
@@ -46,23 +48,19 @@ export default function Laporan() {
     fetchStats();
   }, []);
 
-  // 4. MESIN GENERATOR CSV (Excel)
   const downloadCSV = (data, filename) => {
     if (!data || !data.length) {
       setMessage({ type: "error", text: "Data kosong, tidak ada yang bisa di-export." });
       return;
     }
 
-    // Ambil header dari key object array pertama
     const headers = Object.keys(data[0]);
     
-    // Gabungkan header dan baris data dengan koma
     const csvContent = [
       headers.join(","), 
       ...data.map(row => 
         headers.map(fieldName => {
           let fieldData = row[fieldName] === null ? "" : row[fieldName];
-          // Escape quotes dan koma agar format CSV tidak rusak
           if (typeof fieldData === 'string') {
             fieldData = `"${fieldData.replace(/"/g, '""')}"`;
           }
@@ -71,7 +69,6 @@ export default function Laporan() {
       )
     ].join("\r\n");
 
-    // Eksekusi Download lewat Browser
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
@@ -83,7 +80,6 @@ export default function Laporan() {
     document.body.removeChild(link);
   };
 
-  // 5. FUNGSI PENARIKAN DATA UNTUK MASING-MASING LAPORAN
   const handleDownload = async (tipe) => {
     setIsDownloading(tipe);
     setMessage({ type: "", text: "" });
@@ -95,22 +91,13 @@ export default function Laporan() {
         downloadCSV(data, "Laporan_Data_Pegawai");
       
       } else if (tipe === "absensi") {
-        // Melakukan join (relasi) dengan tabel profiles untuk mendapatkan nama
         const { data, error } = await supabase
           .from('absensi')
-          .select(`
-            id, 
-            tanggal, 
-            waktu_masuk, 
-            waktu_pulang, 
-            status, 
-            profiles (full_name, position)
-          `)
+          .select(`id, tanggal, waktu_masuk, waktu_pulang, status, profiles (full_name, position)`)
           .order('tanggal', { ascending: false });
         
         if (error) throw error;
 
-        // Rapikan struktur data sebelum dijadikan CSV
         const formattedData = data.map(item => ({
           ID_Absensi: item.id,
           Tanggal: item.tanggal,
@@ -127,9 +114,27 @@ export default function Laporan() {
         const { data, error } = await supabase.from('divisi').select('nama, manager');
         if (error) throw error;
         downloadCSV(data, "Laporan_Struktur_Divisi");
+
+      } else if (tipe === "hasil_kerja") {
+        // PENAMBAHAN: Logika tarik data laporan_proyek
+        const { data, error } = await supabase
+          .from('laporan_proyek')
+          .select('id, nama_proyek, file_url, created_at')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        const formattedData = data.map(item => ({
+          ID_Laporan: item.id,
+          Tanggal_Upload: new Date(item.created_at).toLocaleString('id-ID'),
+          Nama_Proyek: item.nama_proyek,
+          Link_File: item.file_url // Link ini yang akan di-klik oleh admin di Excel
+        }));
+
+        downloadCSV(formattedData, "Laporan_Hasil_Kerja_Proyek");
       }
 
-      setMessage({ type: "success", text: `Laporan ${tipe} berhasil di-download.` });
+      setMessage({ type: "success", text: `Laporan ${tipe.replace('_', ' ')} berhasil di-download.` });
     } catch (error) {
       setMessage({ type: "error", text: "Gagal memproses laporan: " + error.message });
     } finally {
@@ -137,7 +142,6 @@ export default function Laporan() {
     }
   };
 
-  // 6. KONFIGURASI KARTU LAPORAN
   const laporanCards = [
     {
       id: "pegawai",
@@ -159,6 +163,13 @@ export default function Laporan() {
       desc: "Export data struktur divisi perusahaan beserta daftar manager penanggung jawab.",
       icon: <Briefcase size={28} />,
       color: "from-purple-500 to-pink-400",
+    },
+    {
+      id: "hasil_kerja",
+      title: "Hasil Pekerjaan",
+      desc: "Export rekapitulasi data proyek lapangan beserta URL file dokumentasi yang diunggah pegawai.",
+      icon: <FolderOpen size={28} />,
+      color: "from-amber-500 to-orange-400", // Warna pembeda untuk hasil kerja
     },
   ];
 
@@ -194,16 +205,16 @@ export default function Laporan() {
           </div>
         )}
 
-        {/* STATS KETERSEDIAAN DATA */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+        {/* STATS KETERSEDIAAN DATA (DIUBAH KE GRID-COLS-4) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-8">
           <div className="bg-[#111827] rounded-[30px] p-7 text-white shadow-lg border border-transparent hover:border-gray-800 transition-all">
             <div className="flex justify-between items-center">
               <div>
                 <p className="text-gray-400 font-medium">Data Pegawai</p>
-                <h2 className="text-5xl font-black mt-3">{stats.pegawai} <span className="text-sm font-normal text-gray-500">Record</span></h2>
+                <h2 className="text-4xl font-black mt-3">{stats.pegawai} <span className="text-xs font-normal text-gray-500">Record</span></h2>
               </div>
               <div className="bg-blue-500 p-4 rounded-2xl shadow-lg shadow-blue-500/20">
-                <Users size={28} />
+                <Users size={24} />
               </div>
             </div>
           </div>
@@ -212,10 +223,10 @@ export default function Laporan() {
             <div className="flex justify-between items-center">
               <div>
                 <p className="text-gray-400 font-medium">Log Absensi</p>
-                <h2 className="text-5xl font-black mt-3">{stats.absensi} <span className="text-sm font-normal text-gray-500">Record</span></h2>
+                <h2 className="text-4xl font-black mt-3">{stats.absensi} <span className="text-xs font-normal text-gray-500">Record</span></h2>
               </div>
               <div className="bg-green-500 p-4 rounded-2xl shadow-lg shadow-green-500/20">
-                <CalendarCheck size={28} />
+                <CalendarCheck size={24} />
               </div>
             </div>
           </div>
@@ -224,33 +235,47 @@ export default function Laporan() {
             <div className="flex justify-between items-center">
               <div>
                 <p className="text-gray-400 font-medium">Struktur Divisi</p>
-                <h2 className="text-5xl font-black mt-3">{stats.divisi} <span className="text-sm font-normal text-gray-500">Divisi</span></h2>
+                <h2 className="text-4xl font-black mt-3">{stats.divisi} <span className="text-xs font-normal text-gray-500">Divisi</span></h2>
               </div>
               <div className="bg-purple-500 p-4 rounded-2xl shadow-lg shadow-purple-500/20">
-                <Briefcase size={28} />
+                <Briefcase size={24} />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-[#111827] rounded-[30px] p-7 text-white shadow-lg border border-transparent hover:border-gray-800 transition-all">
+            <div className="flex justify-between items-center">
+              <div>
+                <p className="text-gray-400 font-medium">Hasil Kerja</p>
+                <h2 className="text-4xl font-black mt-3">{stats.hasilKerja} <span className="text-xs font-normal text-gray-500">File</span></h2>
+              </div>
+              <div className="bg-amber-500 p-4 rounded-2xl shadow-lg shadow-amber-500/20">
+                <FolderOpen size={24} />
               </div>
             </div>
           </div>
         </div>
 
-        {/* REPORT CARD */}
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mt-8">
+        {/* REPORT CARD (DIUBAH KE GRID-COLS-4) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mt-8">
           {laporanCards.map((item) => (
             <div
               key={item.id}
-              className="bg-[#111827] rounded-[35px] p-8 text-white border border-gray-800 hover:border-blue-500 transition-all group shadow-xl"
+              className="bg-[#111827] rounded-[35px] p-8 text-white border border-gray-800 hover:border-blue-500 transition-all group shadow-xl flex flex-col justify-between"
             >
-              <div className={`w-20 h-20 rounded-3xl bg-gradient-to-br ${item.color} flex items-center justify-center shadow-lg transform transition-transform group-hover:rotate-6`}>
-                {item.icon}
+              <div>
+                <div className={`w-20 h-20 rounded-3xl bg-gradient-to-br ${item.color} flex items-center justify-center shadow-lg transform transition-transform group-hover:rotate-6`}>
+                  {item.icon}
+                </div>
+
+                <h2 className="text-2xl font-black mt-6 tracking-tight group-hover:text-blue-400 transition-colors">
+                  {item.title}
+                </h2>
+
+                <p className="text-gray-400 mt-3 leading-relaxed font-medium text-sm min-h-[80px]">
+                  {item.desc}
+                </p>
               </div>
-
-              <h2 className="text-3xl font-black mt-6 tracking-tight group-hover:text-blue-400 transition-colors">
-                {item.title}
-              </h2>
-
-              <p className="text-gray-400 mt-4 leading-relaxed font-medium min-h-[80px]">
-                {item.desc}
-              </p>
 
               <button 
                 onClick={() => handleDownload(item.id)}
@@ -259,13 +284,13 @@ export default function Laporan() {
               >
                 {isDownloading === item.id ? (
                   <>
-                    <Loader2 className="animate-spin" size={22} />
-                    Menyusun Laporan...
+                    <Loader2 className="animate-spin" size={20} />
+                    Menyusun...
                   </>
                 ) : (
                   <>
-                    <Download size={22} />
-                    Export to Excel (CSV)
+                    <Download size={20} />
+                    Export CSV
                   </>
                 )}
               </button>

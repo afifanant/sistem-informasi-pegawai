@@ -11,14 +11,16 @@ import {
   AlertCircle,
   Briefcase,
   Camera,
-  CheckCircle2
+  CheckCircle2,
+  Key,
+  Lock
 } from "lucide-react";
 
 export default function ProfilePegawai() {
   const [isMounted, setIsMounted] = useState(false);
   const fileInputRef = useRef(null);
   
-  // State untuk Data Karyawan (Hanya untuk ditampilkan)
+  // State untuk Data Karyawan (Read-Only)
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -31,7 +33,12 @@ export default function ProfilePegawai() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [message, setMessage] = useState({ type: "", text: "" });
 
-  // Tarik Data Profil Saat Halaman Dimuat
+  // State untuk Ubah Password
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [updatingPassword, setUpdatingPassword] = useState(false);
+
   useEffect(() => {
     setIsMounted(true);
 
@@ -55,7 +62,6 @@ export default function ProfilePegawai() {
           setPosition(profile.position || "Pegawai");
           setAvatarUrl(profile.avatar_url || null);
         } else if (dbError && dbError.code === "PGRST116") {
-          // Jika row belum ada, buat baru
           await supabase.from("profiles").insert([{ id: user.id, full_name: user.email.split("@")[0] }]);
           setFullName(user.email.split("@")[0]);
         }
@@ -69,7 +75,6 @@ export default function ProfilePegawai() {
     fetchProfileData();
   }, []);
 
-  // FUNGSI UPLOAD FOTO PROFIL (Hanya ini yang bisa diedit)
   const handleAvatarUpload = async (event) => {
     try {
       setUploadingAvatar(true);
@@ -91,7 +96,7 @@ export default function ProfilePegawai() {
         .from('avatars')
         .upload(fileName, file, { upsert: true });
 
-      if (uploadError) throw new Error("Gagal upload gambar. Pastikan bucket 'avatars' sudah dibuat dan di-set Public.");
+      if (uploadError) throw new Error("Gagal upload gambar. Pastikan bucket 'avatars' sudah di-set Public.");
 
       const { data: publicUrlData } = supabase.storage
         .from('avatars')
@@ -118,6 +123,56 @@ export default function ProfilePegawai() {
     }
   };
 
+  // FUNGSI UBAH PASSWORD (DENGAN VERIFIKASI KEAMANAN)
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    setMessage({ type: "", text: "" });
+
+    // Validasi Dasar
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      return setMessage({ type: "error", text: "Semua kolom password wajib diisi!" });
+    }
+    if (newPassword !== confirmPassword) {
+      return setMessage({ type: "error", text: "Password baru dan konfirmasi tidak cocok!" });
+    }
+    if (newPassword.length < 6) {
+      return setMessage({ type: "error", text: "Password baru minimal 6 karakter!" });
+    }
+
+    setUpdatingPassword(true);
+
+    try {
+      // 1. Verifikasi Password Lama (Penting: Coba login diam-diam)
+      const { error: verifyError } = await supabase.auth.signInWithPassword({
+        email: email,
+        password: oldPassword,
+      });
+
+      if (verifyError) {
+        throw new Error("Password lama yang Anda masukkan salah!");
+      }
+
+      // 2. Jika password lama benar, lakukan update password
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+
+      if (updateError) throw updateError;
+
+      setMessage({ type: "success", text: "Password berhasil diperbarui! Gunakan password baru untuk login selanjutnya." });
+      
+      // Reset Form
+      setOldPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+
+    } catch (error) {
+      setMessage({ type: "error", text: error.message });
+    } finally {
+      setUpdatingPassword(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white">
@@ -140,14 +195,14 @@ export default function ProfilePegawai() {
             <p className="uppercase tracking-[5px] text-blue-200 text-sm font-semibold">Employee Profile</p>
             <h1 className="text-5xl font-black mt-4 tracking-tight">Profile Saya</h1>
             <p className="text-blue-100 mt-5 max-w-2xl leading-relaxed">
-              Berikut adalah informasi data diri dan posisi Anda di perusahaan. Jika terdapat kesalahan data, silakan hubungi pihak HR/Admin.
+              Berikut adalah informasi data diri dan keamanan akun Anda.
             </p>
           </div>
         </div>
 
-        {/* FEEDBACK BANNER (Sukses / Error) */}
+        {/* FEEDBACK BANNER */}
         {message.text && (
-          <div className={`mt-6 p-4 rounded-2xl border flex items-center gap-3 ${
+          <div className={`mt-6 p-4 rounded-2xl border flex items-center gap-3 transition-all ${
             message.type === "success" 
               ? "bg-green-500/10 border-green-500/30 text-green-400" 
               : "bg-red-500/10 border-red-500/30 text-red-400"
@@ -160,10 +215,9 @@ export default function ProfilePegawai() {
         {/* CONTENT */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mt-8">
           
-          {/* LEFT: AVATAR DISPLAY (Bisa di-klik untuk ganti foto) */}
-          <div className="bg-[#111827] rounded-[35px] p-8 text-white text-center flex flex-col justify-center border border-gray-800 shadow-xl transition-all hover:border-gray-700">
+          {/* LEFT: AVATAR DISPLAY */}
+          <div className="bg-[#111827] rounded-[35px] p-8 text-white text-center flex flex-col justify-center border border-gray-800 shadow-xl transition-all hover:border-gray-700 h-fit">
             
-            {/* AVATAR CLICKABLE AREA */}
             <div 
               className="relative w-[140px] h-[140px] mx-auto group cursor-pointer"
               onClick={() => !uploadingAvatar && fileInputRef.current.click()}
@@ -180,7 +234,6 @@ export default function ProfilePegawai() {
                   <User size={70} className="text-white opacity-80 group-hover:blur-[2px] transition-all" />
                 )}
                 
-                {/* HOVER OVERLAY */}
                 {!uploadingAvatar && (
                   <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                     <Camera size={26} className="text-white mb-1" />
@@ -189,7 +242,6 @@ export default function ProfilePegawai() {
                 )}
               </div>
 
-              {/* INPUT FILE (Disembunyikan) */}
               <input 
                 type="file" 
                 accept="image/png, image/jpeg, image/jpg" 
@@ -209,46 +261,35 @@ export default function ProfilePegawai() {
             </div>
           </div>
 
-          {/* RIGHT: ACCOUNT DETAILS (Read-Only) */}
-          <div className="xl:col-span-2 bg-[#111827] rounded-[35px] p-8 text-white border border-gray-800 shadow-xl transition-all hover:border-gray-700">
-            <div>
+          {/* RIGHT: DATA & PASSWORD */}
+          <div className="xl:col-span-2 space-y-6">
+            
+            {/* INFORMASI PRIBADI */}
+            <div className="bg-[#111827] rounded-[35px] p-8 text-white border border-gray-800 shadow-xl transition-all hover:border-gray-700">
               <div className="flex items-center gap-4 mb-8">
                 <div className="bg-blue-600 p-4 rounded-2xl shadow-lg shadow-blue-500/20">
                   <Shield size={28} />
                 </div>
                 <div>
                   <p className="uppercase tracking-[4px] text-gray-400 text-sm font-semibold">Personal Information</p>
-                  <h2 className="text-4xl font-black tracking-tight">Informasi Pribadi</h2>
+                  <h2 className="text-3xl font-black tracking-tight">Informasi Pribadi</h2>
                 </div>
               </div>
 
-              {/* FIELD DATA (Disabled / Read-Only) */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="text-gray-400 text-sm font-medium">Nama Lengkap</label>
                   <div className="bg-[#1f2937]/40 rounded-2xl px-5 py-4 flex items-center gap-4 mt-3 border border-gray-800 cursor-not-allowed">
                     <User size={20} className="text-gray-600" />
-                    <input
-                      type="text"
-                      value={fullName}
-                      readOnly
-                      disabled
-                      className="bg-transparent outline-none w-full text-gray-400 cursor-not-allowed"
-                    />
+                    <input type="text" value={fullName} readOnly disabled className="bg-transparent outline-none w-full text-gray-400 cursor-not-allowed" />
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-gray-400 text-sm font-medium">Email Sistem (Sesi Aktif)</label>
+                  <label className="text-gray-400 text-sm font-medium">Email Sistem</label>
                   <div className="bg-[#1f2937]/40 rounded-2xl px-5 py-4 flex items-center gap-4 mt-3 border border-gray-800 cursor-not-allowed">
                     <Mail size={20} className="text-gray-600" />
-                    <input
-                      type="email"
-                      value={email}
-                      readOnly
-                      disabled
-                      className="bg-transparent outline-none w-full text-gray-400 cursor-not-allowed"
-                    />
+                    <input type="email" value={email} readOnly disabled className="bg-transparent outline-none w-full text-gray-400 cursor-not-allowed" />
                   </div>
                 </div>
 
@@ -256,27 +297,15 @@ export default function ProfilePegawai() {
                   <label className="text-gray-400 text-sm font-medium">Nomor Telepon</label>
                   <div className="bg-[#1f2937]/40 rounded-2xl px-5 py-4 flex items-center gap-4 mt-3 border border-gray-800 cursor-not-allowed">
                     <Phone size={20} className="text-gray-600" />
-                    <input
-                      type="text"
-                      value={phone || "-"}
-                      readOnly
-                      disabled
-                      className="bg-transparent outline-none w-full text-gray-400 cursor-not-allowed"
-                    />
+                    <input type="text" value={phone || "-"} readOnly disabled className="bg-transparent outline-none w-full text-gray-400 cursor-not-allowed" />
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-gray-400 text-sm font-medium">Divisi Kerja / Posisi</label>
+                  <label className="text-gray-400 text-sm font-medium">Divisi Kerja</label>
                   <div className="bg-[#1f2937]/40 rounded-2xl px-5 py-4 flex items-center gap-4 mt-3 border border-gray-800 cursor-not-allowed">
                     <Briefcase size={20} className="text-gray-600" />
-                    <input
-                      type="text"
-                      value={position || "-"}
-                      readOnly
-                      disabled
-                      className="bg-transparent outline-none w-full text-gray-400 cursor-not-allowed"
-                    />
+                    <input type="text" value={position || "-"} readOnly disabled className="bg-transparent outline-none w-full text-gray-400 cursor-not-allowed" />
                   </div>
                 </div>
 
@@ -284,19 +313,97 @@ export default function ProfilePegawai() {
                   <label className="text-gray-400 text-sm font-medium">Alamat Tempat Tinggal</label>
                   <div className="bg-[#1f2937]/40 rounded-2xl px-5 py-4 flex items-center gap-4 mt-3 border border-gray-800 cursor-not-allowed">
                     <MapPin size={20} className="text-gray-600" />
-                    <input
-                      type="text"
-                      value={address || "-"}
-                      readOnly
-                      disabled
-                      className="bg-transparent outline-none w-full text-gray-400 cursor-not-allowed"
-                    />
+                    <input type="text" value={address || "-"} readOnly disabled className="bg-transparent outline-none w-full text-gray-400 cursor-not-allowed" />
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* GANTI PASSWORD CARD */}
+            <div className="bg-[#111827] rounded-[35px] p-8 text-white border border-gray-800 shadow-xl transition-all hover:border-gray-700">
+              <div className="flex items-center gap-4 mb-8">
+                <div className="bg-rose-600 p-4 rounded-2xl shadow-lg shadow-rose-500/20">
+                  <Key size={28} />
+                </div>
+                <div>
+                  <p className="uppercase tracking-[4px] text-gray-400 text-sm font-semibold">Security Settings</p>
+                  <h2 className="text-3xl font-black tracking-tight">Ubah Password</h2>
+                </div>
+              </div>
+
+              <form onSubmit={handleChangePassword} className="space-y-6">
+                <div>
+                  <label className="text-gray-400 text-sm font-medium">Password Lama</label>
+                  <div className="bg-[#1f2937]/80 rounded-2xl px-5 py-4 flex items-center gap-4 mt-3 border border-gray-700 focus-within:border-blue-500 transition-colors">
+                    <Lock size={20} className="text-gray-400" />
+                    <input 
+                      type="password" 
+                      placeholder="Masukkan password saat ini"
+                      value={oldPassword}
+                      onChange={(e) => setOldPassword(e.target.value)}
+                      className="bg-transparent outline-none w-full text-white placeholder-gray-500"
+                      disabled={updatingPassword}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="text-gray-400 text-sm font-medium">Password Baru</label>
+                    <div className="bg-[#1f2937]/80 rounded-2xl px-5 py-4 flex items-center gap-4 mt-3 border border-gray-700 focus-within:border-blue-500 transition-colors">
+                      <Lock size={20} className="text-gray-400" />
+                      <input 
+                        type="password" 
+                        placeholder="Minimal 6 karakter"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="bg-transparent outline-none w-full text-white placeholder-gray-500"
+                        disabled={updatingPassword}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-gray-400 text-sm font-medium">Konfirmasi Password Baru</label>
+                    <div className="bg-[#1f2937]/80 rounded-2xl px-5 py-4 flex items-center gap-4 mt-3 border border-gray-700 focus-within:border-blue-500 transition-colors">
+                      <Lock size={20} className="text-gray-400" />
+                      <input 
+                        type="password" 
+                        placeholder="Ulangi password baru"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        className="bg-transparent outline-none w-full text-white placeholder-gray-500"
+                        disabled={updatingPassword}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <button 
+                    type="submit" 
+                    disabled={updatingPassword || !oldPassword || !newPassword || !confirmPassword}
+                    className={`px-8 py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 ${
+                      updatingPassword || !oldPassword || !newPassword || !confirmPassword
+                        ? "bg-gray-700 text-gray-400 cursor-not-allowed"
+                        : "bg-blue-600 hover:bg-blue-700 text-white hover:shadow-lg hover:shadow-blue-500/30 active:scale-95"
+                    }`}
+                  >
+                    {updatingPassword ? (
+                      <>
+                        <Loader2 className="animate-spin" size={20} />
+                        Memverifikasi & Menyimpan...
+                      </>
+                    ) : (
+                      "Simpan Password Baru"
+                    )}
+                  </button>
+                </div>
+              </form>
 
             </div>
           </div>
+
         </div>
       </div>
     </DashboardLayout>

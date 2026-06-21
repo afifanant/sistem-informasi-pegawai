@@ -9,7 +9,8 @@ import {
   XCircle,
   TimerReset,
   Loader2,
-  MapPin // <-- Ditambahkan untuk icon peta
+  MapPin, // <-- Ditambahkan untuk icon peta
+  FileText
 } from "lucide-react";
 
 export default function AbsensiAdmin() {
